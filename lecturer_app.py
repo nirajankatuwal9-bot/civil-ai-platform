@@ -125,15 +125,7 @@ CREATE TABLE IF NOT EXISTS quiz_attempts(
 """)
 
 conn.commit()
-# ✅ Auto-create first admin if not exists
-admin_check = pd.read_sql_query("SELECT * FROM users WHERE username='admin'", conn)
 
-if admin_check.empty:
-    c.execute(
-        "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
-        ("admin", "admin123", "lecturer")
-    )
-    conn.commit()
 # ================= HEADER =================
 
 col1, col2 = st.columns([1,4])
