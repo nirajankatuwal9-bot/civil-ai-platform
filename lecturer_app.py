@@ -443,10 +443,12 @@ if role == "lecturer":
             quiz_title = st.text_input("Quiz Title",key="quiz_title")
             total = st.number_input("Total Marks",1,100,20)
             max_attempts = st.number_input("Max Attempts",1,5,1)
+            duration_minutes = st.number_input("Duration (Minutes)", 1, 180, 30) # Added this line
 
             if st.button("Create Quiz"):
-                c.execute("INSERT INTO quizzes(title,subject_id,total_marks,max_attempts) VALUES(?,?,?,?)",
-                          (quiz_title,sub_id,total,max_attempts))
+                # Updated the SQL query to include duration_minutes
+                c.execute("INSERT INTO quizzes(title,subject_id,total_marks,max_attempts,duration_minutes) VALUES(?,?,?,?,?)",
+                          (quiz_title,sub_id,total,max_attempts,duration_minutes))
                 conn.commit()
                 st.success("Created ✅")
 
