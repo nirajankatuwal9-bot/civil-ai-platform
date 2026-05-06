@@ -272,27 +272,6 @@ def generate_summary(pdf_path):
 
 if role == "lecturer":
 
-    # ==========================================================
-    # 🔍 TEMPORARY DEBUG: Show All Users Button (Top)
-    if st.button("Show All Users (Debug)"):
-        users = pd.read_sql_query("SELECT * FROM users", conn)
-        st.dataframe(users)
-
-    # =========================================================
-    # 👇🏷️ TEMPORARY: Create Student1 in Cloud (Temporary)
-    if st.button("Create student1 in Cloud (One Time Only)"):
-        try:
-            c.execute(
-                "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
-                ("student1", hash_password("student123"), "student")
-            )
-            conn.commit()
-            st.success("✅ student1 created in cloud DB")
-        except:
-            st.error("⚠️ Student already exists")
-
-    # =========================================================
-
     tabs = st.tabs([
         "📅 Semesters",
         "📚 Subjects",
