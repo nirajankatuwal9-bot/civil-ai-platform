@@ -68,6 +68,23 @@ CREATE TABLE IF NOT EXISTS users(
 )
 """)
 
+# ================= AUTO-CREATE DEFAULT USERS =================
+# Check if the users table is empty
+c.execute("SELECT COUNT(*) FROM users")
+if c.fetchone()[0] == 0:
+    # Create default Admin/Lecturer
+    c.execute(
+        "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+        ("admin", hash_password("admin123"), "lecturer")
+    )
+    # Create default Student
+    c.execute(
+        "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+        ("student", hash_password("student123"), "student")
+    )
+    conn.commit()
+# ==============================================================
+
 # SEMESTERS
 c.execute("""
 CREATE TABLE IF NOT EXISTS semesters(
