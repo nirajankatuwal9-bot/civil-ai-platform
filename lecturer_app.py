@@ -332,7 +332,7 @@ if role == "lecturer":
         "📝 Submissions & AI",
         "🧪 MCQ Exams",
         "🔎 Plagiarism",
-        "📊 Analytics"
+        "📊 Analytics",
         "👥 Manage Students"
     ])
 
