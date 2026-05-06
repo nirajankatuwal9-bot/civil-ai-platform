@@ -340,7 +340,7 @@ if role == "lecturer":
     with tabs[3]:
 
     # ✅ Load assignments first
-    assignments = pd.read_sql_query(
+      assignments = pd.read_sql_query(
         "SELECT id, title FROM assignments",
         conn
     )
