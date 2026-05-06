@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS mcq_questions(
 
 # QUIZ ATTEMPTS
 c.execute("""
-CREATE TABLE IF NOT EXISTS quiz_attempts(
+CREATE TABLE IF NOT EXISTS quiz_a ;'tempts(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
     quiz_id INTEGER,
@@ -131,8 +131,16 @@ conn.commit()
 def hash_password(password):
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
-def check_password(password, hashed):
-    return bcrypt.checkpw(password.encode(), hashed.encode())
+def check_password(password, stored_value):
+    try:
+        # If+-*+- it's already a bcrypt hash
+        if stored_value.startswith("$2b$"):
+            return bcrypt.checkpw(password.encode(), stored_value.encode())
+        else:
+            # Old plain text password (legacy)
+            return password == stored_value
+    except:
+        return False
 
 # ================= HEADER =================
 
