@@ -91,10 +91,10 @@ CREATE TABLE IF NOT EXISTS assignments(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT,
     subject_id INTEGER,
-    deadline TEXT
+    deadline TEXT,
+    question_file TEXT
 )
 """)
-
 # SUBMISSIONS
 c.execute("""
 CREATE TABLE IF NOT EXISTS submissions(
@@ -348,12 +348,24 @@ if role == "lecturer":
 
             title = st.text_input("Assignment Title",key="assign_title")
             deadline = st.date_input("Deadline",key="assign_deadline")
+            
+            # ✅ Added File Uploader for Lecturer
+            assign_pdf = st.file_uploader("Upload Question/Reference PDF (Optional)", type=["pdf"], key="lecturer_pdf")
 
             if st.button("Create Assignment"):
-                c.execute("INSERT INTO assignments(title,subject_id,deadline) VALUES(?,?,?)",
-                          (title,sub_id,str(deadline)))
+                file_path = ""
+                
+                # If the lecturer uploads a file, save it
+                if assign_pdf:
+                    file_path = f"submission_files/assignment_{assign_pdf.name}"
+                    with open(file_path, "wb") as f:
+                        f.write(assign_pdf.getbuffer())
+
+                # Insert into database with the file_path
+                c.execute("INSERT INTO assignments(title,subject_id,deadline,question_file) VALUES(?,?,?,?)",
+                          (title,sub_id,str(deadline), file_path))
                 conn.commit()
-                st.success("Created ✅")
+                st.success("Created Assignment Successfully ✅")
 
             st.dataframe(pd.read_sql_query("""
             SELECT assignments.title,subjects.name
