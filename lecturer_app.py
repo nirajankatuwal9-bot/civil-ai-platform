@@ -90,13 +90,12 @@ CREATE TABLE IF NOT EXISTS submissions(
 
 # QUIZZES (EXAMS)
 c.execute("""
-CREATE TABLE IF NOT EXISTS quizzes(
+CREATE TABLE IF NOT EXISTS quiz_attempts(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT,
-    subject_id INTEGER,
-    total_marks INTEGER,
-    max_attempts INTEGER,
-    duration_minutes INTEGER
+    user_id INTEGER,
+    quiz_id INTEGER,
+    score REAL,
+    attempt_time TEXT
 )
 """)
 
