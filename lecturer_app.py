@@ -350,7 +350,7 @@ if role == "lecturer":
             # Skip if already graded
                    if row["marks"]:
                       st.info(f"{row['student_name']} already graded ✅")
-                  else:
+                   else:
                       result = vision_grade(row["submission_file"], rubric)
                       st.text_area("Result", result)
 
