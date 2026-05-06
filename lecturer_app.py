@@ -360,8 +360,8 @@ if role == "lecturer":
                            "UPDATE submissions SET marks=? WHERE id=?",
                          (marks, row["id"])
                         )
-                        conn.commit()
-                        st.success(f"Marks Updated: {marks}")
+                    conn.commit()
+                    st.success(f"Marks Updated: {marks}")
 
     # MCQ EXAMS
     with tabs[4]:
