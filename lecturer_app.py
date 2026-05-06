@@ -168,6 +168,8 @@ def check_password(password, stored_value):
 
 # ================= HEADER =================
 
+# ================= HEADER =================
+
 col1, col2 = st.columns([1,4])
 
 with col1:
@@ -181,6 +183,15 @@ with col2:
     """)
 
 st.divider()
+
+# --- TEMPORARY DEV TOOL: Delete this after you fix the database! ---
+if st.sidebar.button("⚠️ Hard Reset Database"):
+    if os.path.exists("data/lecturer.db"):
+        os.remove("data/lecturer.db")
+        st.sidebar.success("Database deleted! Refresh the page now.")
+    else:
+        st.sidebar.info("Database doesn't exist yet.")
+# -------------------------------------------------------------------
 
 # ================= SESSION =================
 
