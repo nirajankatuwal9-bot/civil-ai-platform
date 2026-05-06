@@ -341,17 +341,26 @@ if role == "lecturer":
 
         rubric = st.text_area("Rubric")
 
-        for _,row in df.iterrows():
-            if row["submission_file"] and os.path.exists(row["submission_file"]):
-                if st.button(f"AI Grade {row['student_name']}",key=f"grade_{row['id']}"):
-                    result = vision_grade(row["submission_file"],rubric)
-                    st.text_area("Result",result)
-                    marks = extract_marks(result)
-                    if marks:
-                        c.execute("UPDATE submissions SET marks=? WHERE id=?",
-                                  (marks,row["id"]))
-                        conn.commit()
-                        st.success(f"Marks Updated: {marks}")
+        for _, row in df.iterrows():
+    if row["submission_file"] and os.path.exists(row["submission_file"]):
+
+        if st.button(f"AI Grade {row['student_name']}", key=f"grade_{row['id']}"):
+
+            # ✅ Skip if already graded
+            if row["marks"]:
+                st.info(f"{row['student_name']} already graded ✅")
+            else:
+                result = vision_grade(row["submission_file"], rubric)
+                st.text_area("Result", result)
+
+                marks = extract_marks(result)
+                if marks:
+                    c.execute(
+                        "UPDATE submissions SET marks=? WHERE id=?",
+                        (marks, row["id"])
+                    )
+                    conn.commit()
+                    st.success(f"Marks Updated: {marks}")
 
     # MCQ EXAMS
     with tabs[4]:
