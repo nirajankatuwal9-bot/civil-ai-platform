@@ -108,14 +108,15 @@ CREATE TABLE IF NOT EXISTS submissions(
 )
 """)
 
-# QUIZZES (EXAMS)
+# QUIZZES (EXAMS) - FIXED: This is the table for the quiz details
 c.execute("""
-CREATE TABLE IF NOT EXISTS quiz_attempts(
+CREATE TABLE IF NOT EXISTS quizzes(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    quiz_id INTEGER,
-    score REAL,
-    attempt_time TEXT
+    title TEXT,
+    subject_id INTEGER,
+    total_marks INTEGER,
+    max_attempts INTEGER,
+    duration_minutes INTEGER
 )
 """)
 
@@ -133,7 +134,7 @@ CREATE TABLE IF NOT EXISTS mcq_questions(
 )
 """)
 
-# QUIZ ATTEMPTS
+# QUIZ ATTEMPTS - Keep only this one copy for student scores
 c.execute("""
 CREATE TABLE IF NOT EXISTS quiz_attempts(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
