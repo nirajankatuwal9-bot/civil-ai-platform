@@ -329,7 +329,7 @@ if role == "lecturer":
 
             subjects = load_subjects_by_semester(sem_id)
             st.dataframe(subjects)
-            )
+            
 
     # ASSIGNMENTS
     with tabs[2]:
