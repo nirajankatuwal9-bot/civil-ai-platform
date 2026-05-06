@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS users(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
     password TEXT,
-    role TEXT
+    role TEXT,
+    semester_id INTEGER
 )
 """)
 
@@ -536,39 +537,62 @@ if role == "lecturer":
             df["marks_num"]=pd.to_numeric(df["marks"],errors="coerce")
             st.bar_chart(df.groupby("title")["marks_num"].mean())
     # MANAGE STUDENTS
+    # MANAGE STUDENTS
     with tabs[7]:
         st.subheader("Add New Student")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            new_student_user = st.text_input("Student Username", key="new_stu_user")
-        with col2:
-            new_student_pass = st.text_input("Student Password", type="password", key="new_stu_pass")
+        # Load semesters for the dropdown
+        sems = pd.read_sql_query("SELECT * FROM semesters", conn)
+        
+        if not sems.empty:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                new_student_user = st.text_input("Student Username", key="new_stu_user")
+            with col2:
+                new_student_pass = st.text_input("Student Password", type="password", key="new_stu_pass")
+            with col3:
+                selected_sem = st.selectbox("Assign to Semester", sems["name"], key="new_stu_sem")
 
-        if st.button("Create Student Account"):
-            if new_student_user and new_student_pass:
-                try:
-                    # Encrypt the password before saving
-                    hashed_pw = hash_password(new_student_pass)
-                    c.execute("INSERT INTO users(username, password, role) VALUES(?, ?, ?)",
-                              (new_student_user, hashed_pw, "student"))
-                    conn.commit()
-                    st.success(f"Student '{new_student_user}' created successfully! ✅")
-                    st.rerun() # Refresh the page to show the new student in the list
-                except sqlite3.IntegrityError:
-                    st.error("Username already exists. Please choose a different one.")
-            else:
-                st.warning("Please fill in both fields.")
+            if st.button("Create Student Account"):
+                if new_student_user and new_student_pass:
+                    try:
+                        # Find the ID of the selected semester
+                        sem_id = sems[sems["name"] == selected_sem]["id"].values[0]
+                        hashed_pw = hash_password(new_student_pass)
+                        
+                        # Insert student with their semester_id
+                        c.execute("INSERT INTO users(username, password, role, semester_id) VALUES(?, ?, ?, ?)",
+                                  (new_student_user, hashed_pw, "student", int(sem_id)))
+                        conn.commit()
+                        st.success(f"Student '{new_student_user}' added to {selected_sem}! ✅")
+                        st.rerun()
+                    except sqlite3.IntegrityError:
+                        st.error("Username already exists. Please choose a different one.")
+                else:
+                    st.warning("Please fill in all fields.")
+        else:
+            st.warning("⚠️ Please create at least one Semester in the 'Semesters' tab before adding students.")
 
         st.divider()
         
         st.subheader("Registered Students")
-        # Load and display all users with the role of 'student'
-        students_df = pd.read_sql_query("SELECT id, username FROM users WHERE role='student'", conn)
-        if not students_df.empty:
-            st.dataframe(students_df, use_container_width=True)
-        else:
-            st.info("No students registered yet.")
+        if not sems.empty:
+            # Filter students by semester
+            view_sem = st.selectbox("View students in:", sems["name"], key="view_sem_filter")
+            view_sem_id = sems[sems["name"] == view_sem]["id"].values[0]
+            
+            # Query the database and ORDER BY username in ASCENDING order
+            students_df = pd.read_sql_query("""
+                SELECT id, username 
+                FROM users 
+                WHERE role='student' AND semester_id=?
+                ORDER BY username ASC
+            """, conn, params=(int(view_sem_id),))
+            
+            if not students_df.empty:
+                st.dataframe(students_df, use_container_width=True)
+            else:
+                st.info(f"No students registered in {view_sem} yet.")
 # ================= STUDENT =================
 
 elif role == "student":
