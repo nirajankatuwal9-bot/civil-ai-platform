@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS mcq_questions(
 
 # QUIZ ATTEMPTS
 c.execute("""
-CREATE TABLE IF NOT EXISTS quiz_a ;'tempts(
+CREATE TABLE IF NOT EXISTS quiz_attempts(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
     quiz_id INTEGER,
