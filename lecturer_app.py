@@ -343,7 +343,7 @@ if role == "lecturer":
 
     for _, row in df.iterrows():
 
-    if row["submission_file"] and os.path.exists(row["submission_file"]):
+     if row["submission_file"] and os.path.exists(row["submission_file"]):
 
         if st.button(f"AI Grade {row['student_name']}", key=f"grade_{row['id']}"):
 
