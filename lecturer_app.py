@@ -335,10 +335,7 @@ if role == "lecturer":
 
     # SUBMISSIONS & AI
     with tabs[3]:
-        df = pd.read_sql_query(
-    "SELECT * FROM submissions WHERE assignment_id=?",
-    conn, params=(selected_assignment_id,)
-)
+        df = pd.read_sql_query("SELECT * FROM submissions", conn)
 
         st.dataframe(df)
 
