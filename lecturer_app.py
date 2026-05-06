@@ -553,7 +553,7 @@ elif role == "student":
                 sub=st.selectbox("Subject",subjects["name"])
                 sub_id=subjects[subjects["name"]==sub]["id"].values[0]
 
-                assigns=pd.read_sql_query("SELECT * FROM assignments WHERE subject_id=?",conn,(sub_id,))
+                assigns = pd.read_sql_query("SELECT * FROM assignments WHERE subject_id=?", conn, params=(sub_id,))
                 if not assigns.empty:
                     sel=st.selectbox("Assignment",assigns["title"])
                     pdf=st.file_uploader("Upload PDF",type=["pdf"])
