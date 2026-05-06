@@ -333,6 +333,7 @@ if role == "lecturer":
         "🧪 MCQ Exams",
         "🔎 Plagiarism",
         "📊 Analytics"
+        "👥 Manage Students"
     ])
 
     with tabs[0]:
@@ -534,7 +535,40 @@ if role == "lecturer":
         if not df.empty:
             df["marks_num"]=pd.to_numeric(df["marks"],errors="coerce")
             st.bar_chart(df.groupby("title")["marks_num"].mean())
+    # MANAGE STUDENTS
+    with tabs[7]:
+        st.subheader("Add New Student")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            new_student_user = st.text_input("Student Username", key="new_stu_user")
+        with col2:
+            new_student_pass = st.text_input("Student Password", type="password", key="new_stu_pass")
 
+        if st.button("Create Student Account"):
+            if new_student_user and new_student_pass:
+                try:
+                    # Encrypt the password before saving
+                    hashed_pw = hash_password(new_student_pass)
+                    c.execute("INSERT INTO users(username, password, role) VALUES(?, ?, ?)",
+                              (new_student_user, hashed_pw, "student"))
+                    conn.commit()
+                    st.success(f"Student '{new_student_user}' created successfully! ✅")
+                    st.rerun() # Refresh the page to show the new student in the list
+                except sqlite3.IntegrityError:
+                    st.error("Username already exists. Please choose a different one.")
+            else:
+                st.warning("Please fill in both fields.")
+
+        st.divider()
+        
+        st.subheader("Registered Students")
+        # Load and display all users with the role of 'student'
+        students_df = pd.read_sql_query("SELECT id, username FROM users WHERE role='student'", conn)
+        if not students_df.empty:
+            st.dataframe(students_df, use_container_width=True)
+        else:
+            st.info("No students registered yet.")
 # ================= STUDENT =================
 
 elif role == "student":
