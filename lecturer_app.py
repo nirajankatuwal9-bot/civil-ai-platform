@@ -337,7 +337,7 @@ if role == "lecturer":
             """,conn))
 
     # SUBMISSIONS & AI
-     with tabs[3]:
+    with tabs[3]:
 
     # ✅ Load assignments first
     assignments = pd.read_sql_query(
