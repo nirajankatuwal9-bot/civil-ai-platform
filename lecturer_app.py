@@ -272,6 +272,11 @@ def generate_summary(pdf_path):
 
 if role == "lecturer":
 
+    # ✅ TEMPORARY DEBUG BUTTON
+    if st.button("Show All Users (Debug)"):
+        users = pd.read_sql_query("SELECT * FROM users", conn)
+        st.dataframe(users)
+
     tabs = st.tabs([
         "📅 Semesters",
         "📚 Subjects",
