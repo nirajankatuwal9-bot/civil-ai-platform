@@ -337,37 +337,76 @@ if role == "lecturer":
             """,conn))
 
     # SUBMISSIONS & AI
-    with tabs[3]:
+with tabs[3]:
+
+    # ✅ Load assignments first
+    assignments = pd.read_sql_query(
+        "SELECT id, title FROM assignments",
+        conn
+    )
+
+    if assignments.empty:
+        st.info("No assignments available.")
+    else:
+
+        selected_assignment = st.selectbox(
+            "Select Assignment",
+            assignments["title"],
+            key="sub_ai_assignment"
+        )
+
+        selected_id = assignments[
+            assignments["title"] == selected_assignment
+        ]["id"].values[0]
+
+        # ✅ Load only submissions for selected assignment
         df = pd.read_sql_query("""
-SELECT id, assignment_id, student_name, submission_time, marks
-FROM submissions
-""", conn)
+        SELECT id, student_name, submission_time, marks, submission_file
+        FROM submissions
+        WHERE assignment_id=?
+        """, conn, params=(selected_id,))
 
-        st.dataframe(df)
+        st.dataframe(df, use_container_width=True)
 
-        rubric = st.text_area("Rubric")
+        st.divider()
 
-    for _, row in df.iterrows():
+        rubric = st.text_area("Rubric for AI Grading", key="ai_rubric")
 
-     if row["submission_file"] and os.path.exists(row["submission_file"]):
+        # ✅ AI Grading Loop INSIDE tab
+        for _, row in df.iterrows():
 
-        if st.button(f"AI Grade {row['student_name']}", key=f"grade_{row['id']}"):
+            if row["submission_file"] and os.path.exists(row["submission_file"]):
 
-            # Skip if already graded
-            if row["marks"]:
-                st.info(f"{row['student_name']} already graded ✅")
-            else:
-                result = vision_grade(row["submission_file"], rubric)
-                st.text_area("Result", result)
+                if st.button(
+                    f"AI Grade {row['student_name']}",
+                    key=f"grade_{row['id']}"
+                ):
 
-                marks = extract_marks(result)
-                if marks:
-                    c.execute(
-                        "UPDATE submissions SET marks=? WHERE id=?",
-                        (marks, row["id"])
-                    )
-                    conn.commit()
-                    st.success(f"Marks Updated: {marks}")
+                    if row["marks"]:
+                        st.info(f"{row['student_name']} already graded ✅")
+                    else:
+                        result = vision_grade(row["submission_file"], rubric)
+
+                        st.text_area(
+                            f"AI Result - {row['student_name']}",
+                            result,
+                            key=f"result_{row['id']}"
+                        )
+
+                        marks = extract_marks(result)
+
+                        if marks:
+                            c.execute("""
+                            UPDATE submissions
+                            SET marks=?
+                            WHERE id=?
+                            """, (marks, row["id"]))
+
+                            conn.commit()
+
+                            st.success(
+                                f"{row['student_name']} → Marks Updated: {marks}"
+                            )
 
     # MCQ EXAMS
     with tabs[4]:
