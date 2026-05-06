@@ -33,6 +33,19 @@ os.makedirs("submission_files", exist_ok=True)
 DB_PATH = "data/lecturer.db"
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 c = conn.cursor()
+# ✅ Cached loader functions (for performance)
+
+@st.cache_data
+def load_semesters():
+    return pd.read_sql_query("SELECT * FROM semesters", conn)
+
+@st.cache_data
+def load_subjects():
+    return pd.read_sql_query("SELECT * FROM subjects", conn)
+
+@st.cache_data
+def load_assignments():
+    return pd.read_sql_query("SELECT * FROM assignments", conn)
 
 # ================= DATABASE TABLES =================
 
@@ -303,7 +316,7 @@ if role == "lecturer":
 
     # SUBJECTS
     with tabs[1]:
-        sems = pd.read_sql_query("SELECT * FROM semesters",conn)
+        sems = load_semesters()
         if not sems.empty:
             sem_name = st.selectbox("Semester",sems["name"],key="sub_sem")
             sem_id = sems[sems["name"]==sem_name]["id"].values[0]
@@ -314,8 +327,8 @@ if role == "lecturer":
                 conn.commit()
                 st.success("Added ✅")
 
-            st.dataframe(pd.read_sql_query(
-                "SELECT * FROM subjects WHERE semester_id=?",conn,(sem_id,)
+            subjects = load_subjects_by_semester(sem_id)
+            st.dataframe(subjects)
             ))
 
     # ASSIGNMENTS
@@ -476,12 +489,12 @@ elif role == "student":
 
     # SUBMIT
     with tabs[0]:
-        sems=pd.read_sql_query("SELECT * FROM semesters",conn)
+        sems = load_semesters()
         if not sems.empty:
             sem=st.selectbox("Semester",sems["name"])
             sem_id=sems[sems["name"]==sem]["id"].values[0]
 
-            subjects=pd.read_sql_query("SELECT * FROM subjects WHERE semester_id=?",conn,(sem_id,))
+            subjects = load_subjects_by_semester(sem_id)
             if not subjects.empty:
                 sub=st.selectbox("Subject",subjects["name"])
                 sub_id=subjects[subjects["name"]==sub]["id"].values[0]
