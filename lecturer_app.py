@@ -46,6 +46,13 @@ def load_subjects():
 @st.cache_data
 def load_assignments():
     return pd.read_sql_query("SELECT * FROM assignments", conn)
+@st.cache_data
+def load_subjects_by_semester(semester_id):
+    return pd.read_sql_query(
+        "SELECT * FROM subjects WHERE semester_id=?", 
+        conn, 
+        params=(semester_id,)
+    )
 
 # ================= DATABASE TABLES =================
 
