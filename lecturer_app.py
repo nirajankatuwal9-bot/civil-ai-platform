@@ -537,62 +537,101 @@ if role == "lecturer":
             df["marks_num"]=pd.to_numeric(df["marks"],errors="coerce")
             st.bar_chart(df.groupby("title")["marks_num"].mean())
     # MANAGE STUDENTS
-    # MANAGE STUDENTS
+   # MANAGE STUDENTS
     with tabs[7]:
-        st.subheader("Add New Student")
+        st.subheader("Manage Student Roster")
         
-        # Load semesters for the dropdown
+        # Load semesters for the dropdown & matching
         sems = pd.read_sql_query("SELECT * FROM semesters", conn)
         
         if not sems.empty:
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                new_student_user = st.text_input("Student Username", key="new_stu_user")
-            with col2:
-                new_student_pass = st.text_input("Student Password", type="password", key="new_stu_pass")
-            with col3:
-                selected_sem = st.selectbox("Assign to Semester", sems["name"], key="new_stu_sem")
+            tab_single, tab_bulk = st.tabs(["👤 Add Single Student", "📁 Bulk CSV Upload"])
+            
+            # --- SINGLE UPLOAD ---
+            with tab_single:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    new_student_user = st.text_input("Username (Roll No.)", key="new_stu_user")
+                with col2:
+                    new_student_pass = st.text_input("Password", type="password", key="new_stu_pass")
+                with col3:
+                    # This will show I/I, I/II, etc.
+                    selected_sem = st.selectbox("Assign to Semester", sems["name"], key="new_stu_sem")
 
-            if st.button("Create Student Account"):
-                if new_student_user and new_student_pass:
+                if st.button("Create Student Account"):
+                    if new_student_user and new_student_pass:
+                        try:
+                            sem_id = sems[sems["name"] == selected_sem]["id"].values[0]
+                            hashed_pw = hash_password(new_student_pass)
+                            
+                            c.execute("INSERT INTO users(username, password, role, semester_id) VALUES(?, ?, ?, ?)",
+                                      (new_student_user, hashed_pw, "student", int(sem_id)))
+                            conn.commit()
+                            st.success(f"Student '{new_student_user}' added to {selected_sem}! ✅")
+                            st.rerun()
+                        except sqlite3.IntegrityError:
+                            st.error("Username already exists.")
+                    else:
+                        st.warning("Please fill in all fields.")
+
+            # --- BULK CSV UPLOAD ---
+            with tab_bulk:
+                st.info("💡 **Tip:** Use your exact Semester names (e.g., `I/I`, `I/II`) in your CSV file.")
+                csv_file = st.file_uploader("Upload Student CSV", type=["csv"], key="bulk_csv")
+                
+                if csv_file and st.button("Process CSV Upload"):
                     try:
-                        # Find the ID of the selected semester
-                        sem_id = sems[sems["name"] == selected_sem]["id"].values[0]
-                        hashed_pw = hash_password(new_student_pass)
+                        df_upload = pd.read_csv(csv_file)
+                        required_cols = ["username", "password", "semester"]
                         
-                        # Insert student with their semester_id
-                        c.execute("INSERT INTO users(username, password, role, semester_id) VALUES(?, ?, ?, ?)",
-                                  (new_student_user, hashed_pw, "student", int(sem_id)))
-                        conn.commit()
-                        st.success(f"Student '{new_student_user}' added to {selected_sem}! ✅")
-                        st.rerun()
-                    except sqlite3.IntegrityError:
-                        st.error("Username already exists. Please choose a different one.")
-                else:
-                    st.warning("Please fill in all fields.")
+                        if not all(col in df_upload.columns for col in required_cols):
+                            st.error(f"❌ CSV must have: {', '.join(required_cols)}")
+                        else:
+                            success_count = 0
+                            error_list = []
+                            
+                            for _, row in df_upload.iterrows():
+                                user = str(row["username"]).strip()
+                                pwd = str(row["password"]).strip()
+                                sem_name = str(row["semester"]).strip() # Matches "I/I"
+                                
+                                matching_sem = sems[sems["name"] == sem_name]
+                                if matching_sem.empty:
+                                    error_list.append(f"Skipped {user}: Semester '{sem_name}' not found.")
+                                    continue
+                                
+                                sem_id = matching_sem["id"].values[0]
+                                try:
+                                    c.execute("INSERT INTO users(username, password, role, semester_id) VALUES(?, ?, ?, ?)",
+                                              (user, hash_password(pwd), "student", int(sem_id)))
+                                    success_count += 1
+                                except:
+                                    error_list.append(f"Skipped {user}: Duplicate Roll Number.")
+                                    
+                            conn.commit()
+                            if success_count > 0: st.success(f"Added {success_count} students! ✅")
+                            if error_list: st.warning("\n".join(error_list))
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
         else:
-            st.warning("⚠️ Please create at least one Semester in the 'Semesters' tab before adding students.")
+            st.warning("⚠️ Please create Semesters (like I/I, I/II) first.")
 
         st.divider()
         
-        st.subheader("Registered Students")
+        # --- VIEW STUDENTS (SORTED) ---
+        st.subheader("Master Student Roster")
         if not sems.empty:
-            # Filter students by semester
-            view_sem = st.selectbox("View students in:", sems["name"], key="view_sem_filter")
-            view_sem_id = sems[sems["name"] == view_sem]["id"].values[0]
-            
-            # Query the database and ORDER BY username in ASCENDING order
             students_df = pd.read_sql_query("""
-                SELECT id, username 
+                SELECT semesters.name AS Semester, users.username AS 'Roll Number'
                 FROM users 
-                WHERE role='student' AND semester_id=?
-                ORDER BY username ASC
-            """, conn, params=(int(view_sem_id),))
+                JOIN semesters ON users.semester_id = semesters.id
+                WHERE users.role = 'student'
+                ORDER BY semesters.name ASC, users.username ASC
+            """, conn)
             
             if not students_df.empty:
-                st.dataframe(students_df, use_container_width=True)
-            else:
-                st.info(f"No students registered in {view_sem} yet.")
+                st.dataframe(students_df, use_container_width=True, hide_index=True)
 # ================= STUDENT =================
 
 elif role == "student":
