@@ -353,6 +353,9 @@ if role == "lecturer":
     # SUBJECTS
     with tabs[1]:
         sems = load_semesters()
+        # SUBJECTS
+    with tabs[1]:
+        sems = load_semesters()
         if not sems.empty:
             sem_name = st.selectbox("Semester",sems["name"],key="sub_sem")
             sem_id = sems[sems["name"]==sem_name]["id"].values[0]
@@ -362,6 +365,7 @@ if role == "lecturer":
                 c.execute("INSERT INTO subjects(name,semester_id) VALUES(?,?)",(subj,sem_id))
                 conn.commit()
                 st.success("Added ✅")
+                st.rerun() # ✅ This forces the screen to instantly show the new subject!
 
             subjects = load_subjects_by_semester(sem_id)
             st.dataframe(subjects)
