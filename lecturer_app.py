@@ -10,6 +10,7 @@ from pdf2image import convert_from_path
 import random
 import io
 import base64
+import bcrypt
 
 # ================= CONFIG =================
 
@@ -125,6 +126,13 @@ CREATE TABLE IF NOT EXISTS quiz_attempts(
 """)
 
 conn.commit()
+# ================= PASSWORD SECURITY =================
+
+def hash_password(password):
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+def check_password(password, hashed):
+    return bcrypt.checkpw(password.encode(), hashed.encode())
 
 # ================= HEADER =================
 
@@ -160,23 +168,28 @@ if not st.session_state.logged_in:
     password = st.text_input("Password", type="password", key="login_pass")
 
     if st.button("Login"):
+
         user = pd.read_sql_query(
-            "SELECT * FROM users WHERE username=? AND password=?",
+            "SELECT * FROM users WHERE username=?",
             conn,
-            params=(username, password)
+            params=(username,)
         )
 
         if not user.empty:
-            st.session_state.logged_in = True
-            st.session_state.role = user.iloc[0]["role"]
-            st.session_state.user = user.iloc[0]["username"]
-            st.session_state.user_id = user.iloc[0]["id"]
-            st.rerun()
+            stored_hash = user.iloc[0]["password"]
+
+            if check_password(password, stored_hash):
+                st.session_state.logged_in = True
+                st.session_state.role = user.iloc[0]["role"]
+                st.session_state.user = user.iloc[0]["username"]
+                st.session_state.user_id = user.iloc[0]["id"]
+                st.rerun()
+            else:
+                st.error("Invalid credentials")
         else:
             st.error("Invalid credentials")
 
     st.stop()
-
 # ================= LOGOUT =================
 
 st.sidebar.write(f"👤 {st.session_state.user} ({st.session_state.role})")
