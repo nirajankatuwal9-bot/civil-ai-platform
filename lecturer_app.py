@@ -123,7 +123,11 @@ CREATE TABLE IF NOT EXISTS quiz_attempts(
     attempt_time TEXT
 )
 """)
-
+# ✅ ✅ ✅ ADD PERFORMANCE INDEXES HERE ✅ ✅ ✅
+c.execute("CREATE INDEX IF NOT EXISTS idx_sub_assignment ON submissions(assignment_id)")
+c.execute("CREATE INDEX IF NOT EXISTS idx_sub_student ON submissions(student_name)")
+c.execute("CREATE INDEX IF NOT EXISTS idx_quiz_user ON quiz_attempts(user_id)")
+c.execute("CREATE INDEX IF NOT EXISTS idx_assign_subject ON assignments(subject_id)")
 conn.commit()
 # ================= PASSWORD SECURITY =================
 
