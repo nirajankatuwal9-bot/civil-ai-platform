@@ -241,13 +241,7 @@ if role == "lecturer":
 
     # SUBJECTS
     with tabs[1]:
-        #quick reset button (temporary)
-        if st.button("Reset Subjects and Assignments (Temporary)"):
-            c.execute("DELETE FROM assignments")
-            c.execute("DELETE FROM subjects")
-            conn.commit()
-            st.success("Subjects ad assignments reset.")
-            st.rerun()
+        
         sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
 
         if sems.empty:
