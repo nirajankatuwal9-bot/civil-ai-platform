@@ -740,13 +740,13 @@ elif role == "student":
     tabs = st.tabs(["📝 Submit Assignment","🧪 Take Exam","📊 My Results"])
 
     # SUBMIT
- with tabs[0]:
-    st.subheader("📚 My Pending Assignments")
+    with tabs[0]:
+      st.subheader("📚 My Pending Assignments")
     
     # ===== DEBUGGING SECTION - ADD THIS =====
-    st.write("🔍 **Debug Info:**")
-    st.write(f"Logged in as: {st.session_state.user}")
-    st.write(f"User ID: {st.session_state.user_id}")
+      st.write("🔍 **Debug Info:**")
+      st.write(f"Logged in as: {st.session_state.user}")
+      st.write(f"User ID: {st.session_state.user_id}")
     
     # 1. Get student's semester assignment
     student_data = pd.read_sql_query(
