@@ -693,6 +693,26 @@ elif role == "student":
 
     # SUBMIT
     with tabs[0]:
+        # SUBMIT
+    with tabs[0]:
+        # ==========================================
+        # 🚨 THE X-RAY DB DUMP - DELETE AFTER WE FIX THIS
+        # ==========================================
+        st.error("🚨 DATABASE X-RAY 🚨")
+        
+        st.write("1. Who am I?")
+        user_df = pd.read_sql_query("SELECT id, username, role, semester_id FROM users WHERE username=?", conn, params=(st.session_state.user,))
+        st.dataframe(user_df)
+        
+        st.write("2. What Semesters exist?")
+        sems_df = pd.read_sql_query("SELECT * FROM semesters", conn)
+        st.dataframe(sems_df)
+        
+        st.write("3. What Subjects exist?")
+        subs_df = pd.read_sql_query("SELECT id, name, semester_id FROM subjects", conn)
+        st.dataframe(subs_df)
+        st.divider()
+        # ==========================================
         st.subheader("📚 My Pending Assignments")
         
         # 1. Automatically find this specific student's assigned semester
