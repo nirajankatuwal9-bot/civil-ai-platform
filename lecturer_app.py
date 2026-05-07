@@ -116,9 +116,9 @@ def check_password(p, hashed):
 # ================= DEFAULT LECTURER =================
 
 c.execute("""
-INSERT OR IGNORE INTO users(username, password, role) 
-VALUES(?, ?, ?)
-""", ("admin", hash_password("admin123"), "lecturer"))
+INSERT OR IGNORE INTO users(full_name,username, password, role, semester_id) 
+VALUES(?,?,?, ?, ?)
+""", ("Admistrator", "admin", hash_password("admin123"), "lecturer",None))
 conn.commit()
 
 # ================= SESSION =================
