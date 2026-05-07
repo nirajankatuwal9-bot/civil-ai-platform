@@ -219,10 +219,19 @@ if role == "lecturer":
     with tabs[0]:
         name = st.text_input("New Semester")
         if st.button("Add Semester"):
-            c.execute("INSERT INTO semesters(name) VALUES(?)", (name,))
-            conn.commit()
-            st.success("Added")
-        st.dataframe(pd.read_sql_query("SELECT * FROM semesters", conn))
+
+            if not name.strip():
+                st.error("Semester name cannot be empty.")
+            else:
+                try:
+                    c.execute("INSERT INTO semesters(name) Values(?)", (name.strip(),))
+                    conn.commit()
+                    st.success("✅ Semester Added")
+                    st.rerun()
+                except sqlite3.IntegrityError:
+                    st.warning("⚠️Semester already exists.")
+                    
+            
 
     # SUBJECTS
     with tabs[1]:
