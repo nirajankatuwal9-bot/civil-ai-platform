@@ -543,7 +543,7 @@ if sem_id is None:
     st.warning("You are not assigned to a semester.")
     st.stop()
 
-        sem_id = int(sen_id)
+sem_id = int(sen_id)
 
         # Get assignments for student's semester
         assignments = pd.read_sql_query("""
