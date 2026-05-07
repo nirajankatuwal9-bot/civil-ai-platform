@@ -702,54 +702,61 @@ elif role == "student":
         )
         
         if not student_data.empty and pd.notna(student_data['semester_id'].iloc[0]):
-            my_sem_id = int(student_data['semester_id'].iloc[0])
+            # 🛡️ BULLETPROOF FIX: Convert ID to a clean string (removes .0 if it is a float)
+            raw_sem_id = str(student_data['semester_id'].iloc[0]).split('.')[0]
             
-            # 2. Fetch ONLY the subjects for their assigned semester
-            subjects = pd.read_sql_query(
-                "SELECT * FROM subjects WHERE semester_id=?", 
-                conn, params=(my_sem_id,)
-            )
+            # 2. Fetch ALL subjects and let Python do the matching (ignores SQLite type errors)
+            all_subjects = pd.read_sql_query("SELECT * FROM subjects", conn)
             
-            if not subjects.empty:
-                sub = st.selectbox("Filter by Subject", subjects["name"])
-                sub_id = subjects[subjects["name"] == sub]["id"].values[0]
-
-                # 3. Fetch assignments for that subject
-                assigns = pd.read_sql_query(
-                    "SELECT * FROM assignments WHERE subject_id=?", 
-                    conn, params=(int(sub_id),)
-                )
+            if not all_subjects.empty:
+                # Clean up the subject IDs the same way
+                all_subjects['clean_sem_id'] = all_subjects['semester_id'].astype(str).str.split('.').str[0]
                 
-                if not assigns.empty:
-                    for _, row in assigns.iterrows():
-                        with st.expander(f"📌 {row['title']} (Due: {row['due_date']})"):
-                            st.markdown("**Instructions:**")
-                            st.write(row['description'])
-                            st.divider()
-                            
-                            pdf = st.file_uploader(f"Upload PDF for {row['title']}", type=["pdf"], key=f"up_{row['id']}")
-                            
-                            if st.button("Submit", key=f"btn_{row['id']}"):
-                                if pdf:
-                                    if not os.path.exists("submission_files"):
-                                        os.makedirs("submission_files")
-                                        
-                                    path = f"submission_files/{st.session_state.user}_{pdf.name}"
-                                    with open(path, "wb") as f:
-                                        f.write(pdf.getbuffer())
-                                        
-                                    c.execute("""
-                                    INSERT INTO submissions(assignment_id, student_name, submission_time, submission_file, marks) 
-                                    VALUES(?,?,?,?,?)
-                                    """, (int(row['id']), st.session_state.user, str(datetime.now()), path, ""))
-                                    conn.commit()
-                                    st.success(f"Submitted '{row['title']}' Successfully! ✅")
-                                else:
-                                    st.warning("Please upload a PDF first.")
+                # Filter for only this student's subjects
+                subjects = all_subjects[all_subjects['clean_sem_id'] == raw_sem_id]
+                
+                if not subjects.empty:
+                    sub = st.selectbox("Filter by Subject", subjects["name"])
+                    sub_id = subjects[subjects["name"] == sub]["id"].values[0]
+
+                    # 3. Fetch assignments for that subject
+                    assigns = pd.read_sql_query(
+                        "SELECT * FROM assignments WHERE subject_id=?", 
+                        conn, params=(int(sub_id),)
+                    )
+                    
+                    if not assigns.empty:
+                        for _, row in assigns.iterrows():
+                            with st.expander(f"📌 {row['title']} (Due: {row['due_date']})"):
+                                st.markdown("**Instructions:**")
+                                st.write(row['description'])
+                                st.divider()
+                                
+                                pdf = st.file_uploader(f"Upload PDF for {row['title']}", type=["pdf"], key=f"up_{row['id']}")
+                                
+                                if st.button("Submit", key=f"btn_{row['id']}"):
+                                    if pdf:
+                                        if not os.path.exists("submission_files"):
+                                            os.makedirs("submission_files")
+                                            
+                                        path = f"submission_files/{st.session_state.user}_{pdf.name}"
+                                        with open(path, "wb") as f:
+                                            f.write(pdf.getbuffer())
+                                            
+                                        c.execute("""
+                                        INSERT INTO submissions(assignment_id, student_name, submission_time, submission_file, marks) 
+                                        VALUES(?,?,?,?,?)
+                                        """, (int(row['id']), st.session_state.user, str(datetime.now()), path, ""))
+                                        conn.commit()
+                                        st.success(f"Submitted '{row['title']}' Successfully! ✅")
+                                    else:
+                                        st.warning("Please upload a PDF first.")
+                    else:
+                        st.info(f"🎉 No pending assignments for {sub} right now!")
                 else:
-                    st.info(f"🎉 No pending assignments for {sub} right now!")
+                    st.warning("No subjects have been assigned to your semester yet.")
             else:
-                st.warning("No subjects have been assigned to your semester yet.")
+                st.warning("No subjects exist in the database.")
         else:
             st.error("Error: Your account is not properly assigned to a semester. Please contact the Lecturer.")
 
