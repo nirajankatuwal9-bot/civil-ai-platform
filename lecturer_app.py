@@ -468,17 +468,17 @@ if role == "lecturer":
                 use_container_width=True)
                 hide_index=True
             )
-    if not students.empty:
+        if not students.empty:
 
-    student_options = {
-        f"{row['semester']} | {row['username']} | {row['full_name']}": row['id']
-        for _, row in students.iterrows()
-    }
+            student_options = {
+            f"{row['semester']} | {row['username']} | {row['full_name']}": row['id']
+            for _, row in students.iterrows()
+        }
 
-    selected_student = st.selectbox(
-        "Select Student to Delete",
-        list(student_options.keys())
-    )
+        selected_student = st.selectbox(
+            "Select Student to Delete",
+            list(student_options.keys())
+        )
 
     if st.button("Delete Selected Student"):
 
