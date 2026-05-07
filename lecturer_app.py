@@ -256,7 +256,7 @@ with tabs[2]:
                 st.success("Assignment Created")
    
 
-    # SUBMISSIONS & AI
+  # SUBMISSIONS & AI
     with tabs[3]:
         df = pd.read_sql_query("""
         SELECT submissions.id, users.username, assignments.title,
@@ -291,7 +291,7 @@ with tabs[2]:
 
         if not df.empty:
             df["marks"] = pd.to_numeric(df["marks"], errors="coerce")
-            st.bar_chart(df.groupby("title")["marks"].mean())
+            st.bar_chart(df.groupby("title")["marks"].mean())  
 
 # ==========================================================
 # ===================== STUDENT =============================
