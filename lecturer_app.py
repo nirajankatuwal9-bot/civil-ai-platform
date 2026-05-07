@@ -32,15 +32,18 @@ os.makedirs("submission_files", exist_ok=True)
 
 conn = sqlite3.connect("data/lecturer.db", check_same_thread=False)
 c = conn.cursor()
-# ✅ Ensure users table has semester_id column (Cloud Safe Migration)
-# Check if users table exists
-c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY)")
-conn.commit()
-colums=pd.read_sql_query("PRAGMA table_info(users);",conn)
 
-if "semester_id" not in columns["name"].values:
-    c.execute("ALTER TABLE users ADD COLUMN semester_id INTEGER")
-    conn.commit()
+# USERS TABLE
+c.execute("""
+CREATE TABLE IF NOT EXISTS users(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE,
+    password TEXT,
+    role TEXT,
+    semester_id INTEGER
+)
+""")
+conn.commit()
 # USERS
 c.execute("""
 CREATE TABLE IF NOT EXISTS users(
