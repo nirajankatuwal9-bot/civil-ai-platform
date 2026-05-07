@@ -283,8 +283,8 @@ if role == "lecturer":
 
             c.execute(
                 "INSERT INTO subjects(name,semester_id) VALUES(?,?)",
-                (sub.strip(),int(sem_id)
-                )
+                (sub.strip(),int(sem_id))
+            )
 
             sub = st.text_input("Subject Name")
             if st.button("Add Subject"):
