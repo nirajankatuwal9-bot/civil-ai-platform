@@ -304,7 +304,18 @@ def generate_summary(pdf_path):
         return response.text
     except Exception as e:
         return f"Summary Error: {e}"
+        
+# ================= DATABASE HELPERS =================
 
+def load_semesters():
+    return pd.read_sql_query("SELECT * FROM semesters", conn)
+
+def load_subjects_by_semester(semester_id):
+    return pd.read_sql_query(
+        "SELECT * FROM subjects WHERE semester_id=?",
+        conn,
+        params=(int(semester_id),)
+    )
 # ================= LECTURER =================
 
 if role == "lecturer":
