@@ -379,6 +379,24 @@ if role == "lecturer":
 
             subjects = load_subjects_by_semester(sem_id)
             st.dataframe(subjects)
+            st.divider()
+        st.subheader("⚠️ Danger Zone: Delete Subject")
+        
+        all_subjects = pd.read_sql_query("SELECT id, name FROM subjects", conn)
+        if not all_subjects.empty:
+            subject_to_delete = st.selectbox("Select Subject", all_subjects["name"], key="del_sub")
+            if st.button("🗑️ Delete Subject", type="primary"):
+                # Find the ID
+                sub_id = all_subjects[all_subjects["name"] == subject_to_delete]["id"].values[0]
+                
+                # Delete it
+                c.execute("DELETE FROM subjects WHERE id=?", (int(sub_id),))
+                # Also delete assignments tied to it to prevent broken links
+                c.execute("DELETE FROM assignments WHERE subject_id=?", (int(sub_id),))
+                
+                conn.commit()
+                st.success(f"'{subject_to_delete}' deleted successfully!")
+                st.rerun()
             
 
     # ASSIGNMENTS
@@ -414,6 +432,22 @@ if role == "lecturer":
             FROM assignments
             JOIN subjects ON assignments.subject_id=subjects.id
             """,conn))
+            st.divider()
+        st.subheader("⚠️ Danger Zone: Delete Assignment")
+        
+        all_assigns = pd.read_sql_query("SELECT id, title FROM assignments", conn)
+        if not all_assigns.empty:
+            assign_to_delete = st.selectbox("Select Assignment", all_assigns["title"], key="del_ass")
+            if st.button("🗑️ Delete Assignment", type="primary"):
+                ass_id = all_assigns[all_assigns["title"] == assign_to_delete]["id"].values[0]
+                
+                c.execute("DELETE FROM assignments WHERE id=?", (int(ass_id),))
+                # Also remove student submissions for this assignment
+                c.execute("DELETE FROM submissions WHERE assignment_id=?", (int(ass_id),))
+                
+                conn.commit()
+                st.success(f"'{assign_to_delete}' deleted successfully!")
+                st.rerun()
 
     # SUBMISSIONS & AI
     with tabs[3]:
@@ -626,6 +660,27 @@ if role == "lecturer":
             st.warning("⚠️ Please create Semesters (like I/I, I/II) first.")
 
         st.divider()
+        st.divider()
+        st.subheader("⚠️ Danger Zone: Remove Student")
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            # Create a dropdown of all current students
+            all_students = pd.read_sql_query("SELECT username FROM users WHERE role='student'", conn)
+            if not all_students.empty:
+                student_to_delete = st.selectbox("Select Student to Remove", all_students["username"])
+        
+        with col2:
+            st.write("") # Spacing
+            st.write("") # Spacing
+            if st.button("🗑️ Delete Student", type="primary"):
+                try:
+                    c.execute("DELETE FROM users WHERE username=?", (student_to_delete,))
+                    conn.commit()
+                    st.success(f"{student_to_delete} has been removed from the system.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
         
         # --- VIEW STUDENTS (SORTED) ---
         st.subheader("Master Student Roster")
@@ -648,119 +703,144 @@ elif role == "student":
 
     # SUBMIT
     with tabs[0]:
-        sems = load_semesters()
+        sems = pd.read_sql_query("SELECT * FROM semesters", conn)
         if not sems.empty:
-            sem=st.selectbox("Semester",sems["name"])
-            sem_id=sems[sems["name"]==sem]["id"].values[0]
+            sem = st.selectbox("Semester", sems["name"])
+            sem_id = sems[sems["name"] == sem]["id"].values[0]
 
-            subjects = load_subjects_by_semester(sem_id)
+            subjects = pd.read_sql_query("SELECT * FROM subjects WHERE semester_id=?", conn, params=(int(sem_id),))
             if not subjects.empty:
-                sub=st.selectbox("Subject",subjects["name"])
-                sub_id=subjects[subjects["name"]==sub]["id"].values[0]
+                sub = st.selectbox("Subject", subjects["name"])
+                sub_id = subjects[subjects["name"] == sub]["id"].values[0]
 
-                assigns = pd.read_sql_query("SELECT * FROM assignments WHERE subject_id=?", conn, params=(sub_id,))
+                assigns = pd.read_sql_query("SELECT * FROM assignments WHERE subject_id=?", conn, params=(int(sub_id),))
+                
                 if not assigns.empty:
-                    sel=st.selectbox("Assignment",assigns["title"])
-                    pdf=st.file_uploader("Upload PDF",type=["pdf"])
-                    if st.button("Submit"):
-                        if pdf:
-                            path=f"submission_files/{st.session_state.user}_{pdf.name}"
-                            with open(path,"wb") as f:
-                                f.write(pdf.getbuffer())
-                            aid=assigns[assigns["title"]==sel]["id"].values[0]
-                            c.execute("INSERT INTO submissions(assignment_id,student_name,submission_time,submission_file,marks) VALUES(?,?,?,?,?)",
-                                      (aid,st.session_state.user,str(datetime.now()),path,""))
-                            conn.commit()
-                            st.success("Submitted ✅")
-
-    # EXAM
-    # EXAM
-with tabs[1]:
-
-    quizzes = pd.read_sql_query("SELECT * FROM quizzes", conn)
-
-    if not quizzes.empty:
-
-        sel = st.selectbox("Select Quiz", quizzes["title"], key="student_quiz")
-        quiz = quizzes[quizzes["title"] == sel].iloc[0]
-
-        # ✅ Attempt Limit Check
-        prev = pd.read_sql_query(
-            "SELECT * FROM quiz_attempts WHERE user_id=? AND quiz_id=?",
-            conn, (st.session_state.user_id, quiz["id"])
-        )
-
-        if len(prev) >= quiz["max_attempts"]:
-            st.error("⛔ Attempt limit reached.")
+                    st.subheader(f"📚 Pending Assignments for {sub}")
+                    
+                    # ✅ THIS IS THE NEW ASSIGNMENT CARD LAYOUT
+                    for _, row in assigns.iterrows():
+                        with st.expander(f"📌 {row['title']} (Due: {row['due_date']})"):
+                            st.markdown("**Instructions:**")
+                            st.write(row['description'])
+                            st.divider()
+                            
+                            pdf = st.file_uploader(f"Upload PDF for {row['title']}", type=["pdf"], key=f"up_{row['id']}")
+                            
+                            if st.button("Submit", key=f"btn_{row['id']}"):
+                                if pdf:
+                                    # Ensure the folder exists so it doesn't crash
+                                    if not os.path.exists("submission_files"):
+                                        os.makedirs("submission_files")
+                                        
+                                    path = f"submission_files/{st.session_state.user}_{pdf.name}"
+                                    with open(path, "wb") as f:
+                                        f.write(pdf.getbuffer())
+                                        
+                                    c.execute("""
+                                    INSERT INTO submissions(assignment_id, student_name, submission_time, submission_file, marks) 
+                                    VALUES(?,?,?,?,?)
+                                    """, (int(row['id']), st.session_state.user, str(datetime.now()), path, ""))
+                                    conn.commit()
+                                    st.success(f"Submitted '{row['title']}' Successfully! ✅")
+                                else:
+                                    st.warning("Please upload a PDF first.")
+                else:
+                    st.info(f"No assignments posted yet for {sub}.")
+            else:
+                st.info("No subjects found for this semester.")
         else:
+            st.info("No semesters available.")
 
-            # ✅ TIMER START
-            if "exam_start_time" not in st.session_state or st.session_state.exam_start_time is None:
-                st.session_state.exam_start_time = datetime.now()
+    # EXAM
+    with tabs[1]:
+        quizzes = pd.read_sql_query("SELECT * FROM quizzes", conn)
 
-            duration_seconds = quiz["duration_minutes"] * 60
-            elapsed = (datetime.now() - st.session_state.exam_start_time).seconds
-            remaining = duration_seconds - elapsed
+        if not quizzes.empty:
+            sel = st.selectbox("Select Quiz", quizzes["title"], key="student_quiz")
+            quiz = quizzes[quizzes["title"] == sel].iloc[0]
 
-            if remaining <= 0:
-                st.error("⏰ Time is up! Auto-submitting...")
-                remaining = 0
-
-            minutes = remaining // 60
-            seconds = remaining % 60
-
-            st.warning(f"⏳ Time Remaining: {minutes:02d}:{seconds:02d}")
-
-            # ✅ Load Questions
-            questions = pd.read_sql_query(
-                "SELECT * FROM mcq_questions WHERE quiz_id=?",
-                conn, (quiz["id"],)
+            # ✅ Attempt Limit Check
+            prev = pd.read_sql_query(
+                "SELECT * FROM quiz_attempts WHERE user_id=? AND quiz_id=?",
+                conn, (st.session_state.user_id, int(quiz["id"]))
             )
 
-            score = 0
-            answers = {}
+            if len(prev) >= quiz["max_attempts"]:
+                st.error("⛔ Attempt limit reached.")
+            else:
+                # ✅ TIMER START
+                if "exam_start_time" not in st.session_state or st.session_state.exam_start_time is None:
+                    st.session_state.exam_start_time = datetime.now()
 
-            for _, row in questions.iterrows():
-                options = ["A", "B", "C", "D"]
-                random.shuffle(options)
+                duration_seconds = quiz["duration_minutes"] * 60
+                elapsed = (datetime.now() - st.session_state.exam_start_time).seconds
+                remaining = duration_seconds - elapsed
 
-                ans = st.radio(row["question"], options, key=row["id"])
-                answers[row["id"]] = ans
+                if remaining <= 0:
+                    st.error("⏰ Time is up! Auto-submitting...")
+                    remaining = 0
 
-            # ✅ Submit OR Auto Submit
-            if st.button("Submit Exam") or remaining <= 0:
+                minutes = remaining // 60
+                seconds = remaining % 60
+
+                st.warning(f"⏳ Time Remaining: {minutes:02d}:{seconds:02d}")
+
+                # ✅ Load Questions
+                questions = pd.read_sql_query(
+                    "SELECT * FROM mcq_questions WHERE quiz_id=?",
+                    conn, (int(quiz["id"]),)
+                )
+
+                score = 0
+                answers = {}
 
                 for _, row in questions.iterrows():
-                    if answers.get(row["id"]) == row["correct_answer"]:
-                        score += 1
+                    options = ["A", "B", "C", "D"]
+                    # If you want to shuffle options, you need to tie them to actual answer text,
+                    # but keeping standard A, B, C, D is safest for basic MCQs.
+                    ans = st.radio(row["question"], options, key=f"q_{row['id']}")
+                    answers[row["id"]] = ans
 
-                final = (score / len(questions)) * quiz["total_marks"]
+                # ✅ Submit OR Auto Submit
+                if st.button("Submit Exam") or remaining <= 0:
 
-                c.execute("""
-                INSERT INTO quiz_attempts(user_id, quiz_id, score, attempt_time)
-                VALUES (?, ?, ?, ?)
-                """, (
-                    st.session_state.user_id,
-                    quiz["id"],
-                    round(final, 2),
-                    str(datetime.now())
-                ))
+                    for _, row in questions.iterrows():
+                        if answers.get(row["id"]) == row["correct_answer"]:
+                            score += 1
 
-                conn.commit()
+                    final = (score / len(questions)) * quiz["total_marks"]
 
-                st.success(f"✅ Final Marks: {round(final,2)}")
+                    c.execute("""
+                    INSERT INTO quiz_attempts(user_id, quiz_id, score, attempt_time)
+                    VALUES (?, ?, ?, ?)
+                    """, (
+                        st.session_state.user_id,
+                        int(quiz["id"]),
+                        round(final, 2),
+                        str(datetime.now())
+                    ))
 
-                # ✅ Reset Timer
-                st.session_state.exam_start_time = None
+                    conn.commit()
 
-                st.stop()
+                    st.success(f"✅ Final Marks: {round(final,2)}")
+
+                    # ✅ Reset Timer
+                    st.session_state.exam_start_time = None
+                    st.stop()
+        else:
+            st.info("No exams available right now.")
 
     # RESULTS
     with tabs[2]:
-        results=pd.read_sql_query("""
-        SELECT quizzes.title,quiz_attempts.score
+        results = pd.read_sql_query("""
+        SELECT quizzes.title, quiz_attempts.score
         FROM quiz_attempts
-        JOIN quizzes ON quiz_attempts.quiz_id=quizzes.id
-        WHERE quiz_attempts.user_id=?
-        """,conn,params=(st.session_state.user_id,))
-        st.dataframe(results)
+        JOIN quizzes ON quiz_attempts.quiz_id = quizzes.id
+        WHERE quiz_attempts.user_id = ?
+        """, conn, params=(st.session_state.user_id,))
+        
+        if not results.empty:
+            st.dataframe(results, use_container_width=True, hide_index=True)
+        else:
+            st.info("You haven't taken any exams yet.")
