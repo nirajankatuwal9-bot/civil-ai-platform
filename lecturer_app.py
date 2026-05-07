@@ -362,7 +362,7 @@ if role == "lecturer":
 
             subj = st.text_input("New Subject",key="new_subj")
             if st.button("Add Subject"):
-                c.execute("INSERT INTO subjects(name,semester_id) VALUES(?,?)",(subj,sem_id))
+                c.execute("INSERT INTO subjects(name,semester_id) VALUES(?,?)",(subj,int(sem_id)))
                 conn.commit()
                 st.success("Added ✅")
                 st.rerun() # ✅ This forces the screen to instantly show the new subject!
