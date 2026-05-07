@@ -524,6 +524,7 @@ elif role == "student":
 
     # ================= ASSIGNMENTS =================
     with tabs[0]:
+
         st.write("SESSION USER ID:", st.session_state.user_id)
 
         debug_all_users = pd.read_sql_query(
@@ -532,7 +533,6 @@ elif role == "student":
         )
 
         st.write("ALL USERS TABLE:", debug_all_users)
-       
 
         # Get student's semester
         student_info = pd.read_sql_query(
@@ -550,6 +550,7 @@ elif role == "student":
         if sem_id is None:
             st.warning("You are not assigned to a semester.")
             st.stop()
+
         sem_id = int(sem_id)
 
         # Get assignments for student's semester
@@ -560,13 +561,16 @@ elif role == "student":
         WHERE subjects.semester_id=?
         ORDER BY assignments.id DESC
         """, conn, params=(sem_id,))
+
         st.write("DEBUG semester ID:", sem_id)
+
         debug_subjects = pd.read_sql_query(
-                "SELECT * FROM subjects WHERE semester_id=?",
-                conn,
-                params=(sem_id,)
+            "SELECT * FROM subjects WHERE semester_id=?",
+            conn,
+            params=(sem_id,)
         )
         st.write("DEBUG subjects for semester:", debug_subjects)
+
         debug_assignments = pd.read_sql_query("""
         SELECT assignments.id, assignments.title, assignments.subject_id, subjects.semester_id
         FROM assignments
@@ -574,9 +578,7 @@ elif role == "student":
         WHERE subjects.semester_id=?
         """, conn, params=(sem_id,))
         st.write("DEBUG assignments for semester:", debug_assignments)
-        
-           
-st.write("DEBUG subjects for semester:", debug_subjects)
+
         if assignments.empty:
             st.info("No assignments available for your semester.")
         else:
