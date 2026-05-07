@@ -7,6 +7,14 @@ import re
 from difflib import SequenceMatcher
 from google import genai
 from pdf2image import convert_from_path
+# ✅ The professional way: 
+# On Linux (Streamlit Cloud), poppler is in the system path automatically.
+# We don't need to specify poppler_path!
+try:
+    images = convert_from_path(pdf_path) 
+    # If you had poppler_path="C:/..." here, DELETE THAT PART.
+except Exception as e:
+    st.error(f"PDF Conversion Error: {e}")
 import random
 import io
 import base64
