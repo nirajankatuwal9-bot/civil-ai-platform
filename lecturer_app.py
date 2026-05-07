@@ -376,7 +376,7 @@ if role == "lecturer":
 
     # ASSIGNMENTS
     with tabs[2]:
-    st.subheader("📝 Create New Assignment")
+        st.subheader("📝 Create New Assignment")
     
     subjects = pd.read_sql_query("SELECT * FROM subjects", conn)
     
