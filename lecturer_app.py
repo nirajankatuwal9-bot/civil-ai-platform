@@ -532,11 +532,16 @@ elif role == "student":
             params=(st.session_state.user_id,)
         )
 
-        if student_info.empty or pd.isna(student_info.iloc[0]["semester_id"]):
+        if student_info.empty
             st.warning("You are not assigned to a semester.")
             st.stop()
 
         sem_id = student_info.iloc[0]["semester_id"]
+
+        if sem_id is None:
+            st.warning("You are not assigned to a semester.")
+            st.stop()
+        sem_id = int(sem_id)
 
         # Get assignments for student's semester
         assignments = pd.read_sql_query("""
