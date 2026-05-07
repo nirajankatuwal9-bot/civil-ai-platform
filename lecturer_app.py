@@ -522,33 +522,39 @@ elif role == "student":
 
     tabs = st.tabs(["Assignments", "My Results"])
 
+    # ================= ASSIGNMENTS =================
     with tabs[0]:
 
-        student = pd.read_sql_query(
+        # Get student's semester
+        student_info = pd.read_sql_query(
             "SELECT semester_id FROM users WHERE id=?",
             conn,
             params=(st.session_state.user_id,)
         )
 
-        if student.empty or pd.isna(student.iloc[0]["semester_id"]):
+        if student_info.empty or pd.isna(student_info.iloc[0]["semester_id"]):
             st.warning("You are not assigned to a semester.")
             st.stop()
 
-        sem_id = student.iloc[0]["semester_id"]
+        sem_id = student_info.iloc[0]["semester_id"]
 
+        # Get assignments for student's semester
         assignments = pd.read_sql_query("""
         SELECT assignments.*, subjects.name as subject
         FROM assignments
-        JOIN subjects ON assignments.subject_id=subjects.id
+        JOIN subjects ON assignments.subject_id = subjects.id
         WHERE subjects.semester_id=?
+        ORDER BY assignments.id DESC
         """, conn, params=(sem_id,))
 
         if assignments.empty:
-            st.info("No assignments available.")
+            st.info("No assignments available for your semester.")
         else:
             for _, row in assignments.iterrows():
-                with st.expander(row["title"]):
 
+                with st.expander(f"{row['title']} (Due: {row['deadline']})"):
+
+                    # ✅ DOWNLOAD ASSIGNMENT FILE
                     if row["question_file"] and os.path.exists(row["question_file"]):
                         with open(row["question_file"], "rb") as f:
                             st.download_button(
@@ -557,51 +563,87 @@ elif role == "student":
                                 file_name=os.path.basename(row["question_file"]),
                                 key=f"download_{row['id']}"
                             )
+                    else:
+                        st.info("No assignment file attached.")
 
-                    uploaded = st.file_uploader("Upload Your PDF", type=["pdf"], key=f"upload_{row['id']}")
+                    st.divider()
 
-                    existing = pd.read_sql_query(
-                        "SELECT * FROM submissions WHERE assignment_id=? AND student_id=?",
-                        conn,
-                        params=(row["id"], st.session_state.user_id)
-                    )
+                    # ✅ CHECK IF ALREADY SUBMITTED
+                    existing_submission = pd.read_sql_query("""
+                    SELECT * FROM submissions
+                    WHERE assignment_id=? AND student_id=?
+                    """, conn, params=(row["id"], st.session_state.user_id))
 
-                    if existing.empty:
-                        if st.button("Submit", key=f"submit_{row['id']}"):
-                            if uploaded:
-                                path = f"submission_files/{st.session_state.username}_{uploaded.name}"
-                                with open(path, "wb") as f:
+                    if not existing_submission.empty:
+                        st.success("✅ You have already submitted this assignment.")
+
+                        # Show marks if graded
+                        marks = existing_submission.iloc[0]["marks"]
+                        if marks:
+                            st.metric("Marks Awarded", marks)
+
+                        # Allow download of submitted file
+                        submitted_file = existing_submission.iloc[0]["submission_file"]
+                        if submitted_file and os.path.exists(submitted_file):
+                            with open(submitted_file, "rb") as f:
+                                st.download_button(
+                                    "Download My Submission",
+                                    f,
+                                    file_name=os.path.basename(submitted_file),
+                                    key=f"download_submission_{row['id']}"
+                                )
+
+                    else:
+                        # ✅ UPLOAD NEW SUBMISSION
+                        uploaded = st.file_uploader(
+                            "Upload Your PDF",
+                            type=["pdf"],
+                            key=f"upload_{row['id']}"
+                        )
+
+                        if st.button("Submit Assignment", key=f"submit_{row['id']}"):
+
+                            if not uploaded:
+                                st.warning("Please upload a PDF file before submitting.")
+                            else:
+                                file_path = f"submission_files/{st.session_state.username}_{row['id']}_{uploaded.name}"
+
+                                with open(file_path, "wb") as f:
                                     f.write(uploaded.getbuffer())
 
                                 c.execute("""
-                                INSERT INTO submissions(assignment_id,student_id,
-                                submission_time,submission_file,marks)
+                                INSERT INTO submissions(
+                                    assignment_id,
+                                    student_id,
+                                    submission_time,
+                                    submission_file,
+                                    marks
+                                )
                                 VALUES(?,?,?,?,?)
                                 """, (
                                     row["id"],
                                     st.session_state.user_id,
                                     str(datetime.now()),
-                                    path,
+                                    file_path,
                                     ""
                                 ))
 
                                 conn.commit()
-                                st.success("Submitted")
+                                st.success("✅ Assignment submitted successfully.")
                                 st.rerun()
-                            else:
-                                st.warning("Please upload a PDF before submitting.")
-                    else:
-                        st.success("You have already submitted this assignment.")
 
+    # ================= RESULTS =================
     with tabs[1]:
+
         results = pd.read_sql_query("""
         SELECT assignments.title, submissions.marks
         FROM submissions
-        JOIN assignments ON submissions.assignment_id=assignments.id
+        JOIN assignments ON submissions.assignment_id = assignments.id
         WHERE submissions.student_id=?
+        ORDER BY submissions.id DESC
         """, conn, params=(st.session_state.user_id,))
 
         if results.empty:
-            st.info("No results yet.")
+            st.info("No results available yet.")
         else:
             st.dataframe(results, use_container_width=True, hide_index=True)
