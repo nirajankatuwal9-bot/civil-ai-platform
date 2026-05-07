@@ -280,13 +280,8 @@ if role == "lecturer":
         else:
             sem = st.selectbox("Semester", sems["name"])
             sem_id = int(sems[sems["name"] == sem]["id"].values[0])
-
-            c.execute(
-                "INSERT INTO subjects(name,semester_id) VALUES(?,?)",
-                (sub.strip(),int(sem_id))
-            )
-
             sub = st.text_input("Subject Name")
+            
             if st.button("Add Subject"):
                 if not sub.strip():
                     st.error("Subject name cannot be empty.")
