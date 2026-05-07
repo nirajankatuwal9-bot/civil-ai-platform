@@ -259,7 +259,7 @@ if role == "lecturer":
                 subject_ids=pd.read_sql_query(
                     "SELECT id FROM subjects WHERE semester_id=?",
                     conn,
-                    params=(sem_id,)
+                    params=(int(sem_id),)
                 )
                 for _, row in subject_ids.iterrows():
                     c.execute("DELETE FROM assignments WHERE subject_id=?", (row["id"],)) 
