@@ -252,9 +252,9 @@ if role == "lecturer":
 selected_subject = st.selectbox("Select Subject", list(subject_options.keys()))
 sub_id = subject_options[selected_subject]
 
-    title = st.text_input("Assignment Title")
-    deadline = st.date_input("Deadline")
-    file = st.file_uploader("Upload Assignment PDF", type=["pdf"])
+        title = st.text_input("Assignment Title")
+        deadline = st.date_input("Deadline")
+        file = st.file_uploader("Upload Assignment PDF", type=["pdf"])
 
     if st.button("Create Assignment"):
 
