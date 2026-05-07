@@ -320,7 +320,7 @@ if role == "lecturer":
             subjects = pd.read_sql_query(
                 "SELECT * FROM subjects WHERE semester_id=?",
                 conn,
-                params=INT(sem_id,)
+                params= (sem_id,)
             )
 
             if subjects.empty:
