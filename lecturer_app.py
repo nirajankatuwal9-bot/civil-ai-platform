@@ -722,17 +722,16 @@ elif role == "student":
                 
                 if not assigns.empty:
                     for _, row in assigns.iterrows():
-                        with st.expander(f"📌 {row['title']} (Due: {row['due_date']})"):
-                            st.markdown("**Instructions:**")
-                            st.write(row['description'])
+                        # ✅ FIX 1: Changed 'due_date' to 'deadline' to match your database
+                        with st.expander(f"📌 {row['title']} (Due: {row['deadline']})"):
                             
                             # ==========================================================
-                            # 1. SHOW THE LECTURER'S ASSIGNMENT FILE (IF IT EXISTS)
+                            # 1. SHOW THE LECTURER'S ASSIGNMENT FILE
                             # ==========================================================
-                            # Check what your database column is called (usually 'file_path' or 'assignment_file')
-                            file_col = 'file_path' if 'file_path' in row else 'assignment_file' if 'assignment_file' in row else None
+                            # ✅ FIX 2: Your database explicitly calls this 'question_file'
+                            file_col = 'question_file'
                             
-                            if file_col and pd.notna(row[file_col]) and str(row[file_col]).strip() != "":
+                            if file_col in row and pd.notna(row[file_col]) and str(row[file_col]).strip() != "":
                                 if os.path.exists(row[file_col]):
                                     with open(row[file_col], "rb") as f:
                                         st.download_button(
@@ -744,6 +743,8 @@ elif role == "student":
                                         )
                                 else:
                                     st.warning("⚠️ The attached file could not be found on the server.")
+                            else:
+                                st.info("No reference file attached by lecturer.")
                             
                             st.divider()
 
@@ -782,10 +783,6 @@ elif role == "student":
                                         st.warning("Please upload a PDF first.")
                 else:
                     st.info(f"🎉 No pending assignments for {sub} right now!")
-            else:
-                st.warning("No subjects have been assigned to your semester yet.")
-        else:
-            st.error("Error: Your account is not properly assigned to a semester. Please contact the Lecturer.")
 
     # EXAM
     with tabs[1]:
