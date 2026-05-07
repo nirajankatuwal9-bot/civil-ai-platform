@@ -307,6 +307,11 @@ def vision_grade(pdf_path, rubric):
     except Exception as e:
         return f"Error: {e}"
 
+# ✅ HERE IS THE MISSING FUNCTION THAT FIXES THE NAME ERROR
+def extract_marks(text):
+    match = re.search(r"FINAL_MARKS:\s*(\d+)/(\d+)", text)
+    return int(match.group(1)) if match else None
+
 def generate_summary(pdf_path):
     try:
         # ✅ FIX: Removed poppler_path
