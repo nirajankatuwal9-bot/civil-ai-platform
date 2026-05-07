@@ -560,7 +560,23 @@ elif role == "student":
         WHERE subjects.semester_id=?
         ORDER BY assignments.id DESC
         """, conn, params=(sem_id,))
-
+        st.write("DEBUG semester ID:", sem_id)
+        debug_subjects = pd.read_sql_query(
+                "SELECT * FROM subjects WHERE semester_id=?",
+                conn,
+                params=(sem_id,)
+        )
+        st.write("DEBUG subjects for semester:", debug_subjects)
+        debug_assignments = pd.read_sql_query("""
+        SELECT assignments.id, assignments.title, assignments.subject_id, subjects.semester_id
+        FROM assignments
+        JOIN subjects ON assignments.subject_id = subjects.id
+        WHERE subjects.semester_id=?
+        """, conn, params=(sem_id,))
+        st.write("DEBUG assignments for semester:", debug_assignments)
+        
+           
+st.write("DEBUG subjects for semester:", debug_subjects)
         if assignments.empty:
             st.info("No assignments available for your semester.")
         else:
