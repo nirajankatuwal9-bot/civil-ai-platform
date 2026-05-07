@@ -22,7 +22,7 @@ st.markdown("""
     .stMetric { background-color: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     [data-testid="stExpander"] { border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.05); background-color: white; margin-bottom: 10px; }
     </style>
-    """, unsafe_allow_stdio=True)
+    """, unsafe_allow_html=True) # Corrected to html
 
 GEMINI_MODEL = "gemini-3-flash-preview"
 client = genai.Client(api_key=st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY"))
