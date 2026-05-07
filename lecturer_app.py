@@ -7,14 +7,6 @@ import re
 from difflib import SequenceMatcher
 from google import genai
 from pdf2image import convert_from_path
-# ✅ The professional way: 
-# On Linux (Streamlit Cloud), poppler is in the system path automatically.
-# We don't need to specify poppler_path!
-try:
-    images = convert_from_path(pdf_path) 
-    # If you had poppler_path="C:/..." here, DELETE THAT PART.
-except Exception as e:
-    st.error(f"PDF Conversion Error: {e}")
 import random
 import io
 import base64
@@ -30,7 +22,7 @@ st.set_page_config(
 )
 
 GEMINI_MODEL = "gemini-3-flash-preview"
-POPPLER_PATH = r"C:\Program Files\poppler\Library\bin"
+#POPPLER_PATH = r"C:\Program Files\poppler\Library\bin"
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # ================= FOLDERS =================
@@ -280,33 +272,34 @@ role = st.session_state.role
 
 def vision_grade(pdf_path, rubric):
     try:
-        images = convert_from_path(pdf_path, poppler_path=POPPLER_PATH)
+        # ✅ FIX: Removed poppler_path so it uses the system installation
+        images = convert_from_path(pdf_path)
+        
         prompt = f"""
-You are a strict Civil Engineering lecturer.
+        You are a strict Civil Engineering lecturer.
 
-MODEL ANSWER:
-{rubric}
+        MODEL ANSWER/RUBRIC:
+        {rubric}
 
-Return EXACTLY:
-FINAL_MARKS: X/10
-FEEDBACK:
-- bullet points
-"""
+        Return EXACTLY in this format:
+        FINAL_MARKS: X/10
+        FEEDBACK:
+        - bullet points
+        """
 
-        content = [{"type":"text","text":prompt}]
+        # Prepare the parts for the new Google GenAI SDK
+        content_parts = [prompt]
 
-        for img in images[:5]:
+        # Convert images to the format Gemini expects
+        for img in images[:5]: # Limit to first 5 pages for speed
             buffer = io.BytesIO()
             img.save(buffer, format="PNG")
-            img_b64 = base64.b64encode(buffer.getvalue()).decode()
-            content.append({
-                "type":"image",
-                "source":{"mime_type":"image/png","data":img_b64}
-            })
+            # The new SDK often prefers bytes directly or a specific Part object
+            content_parts.append(img) 
 
         response = client.models.generate_content(
             model=GEMINI_MODEL,
-            contents=[{"role":"user","parts":content}]
+            contents=content_parts
         )
 
         return response.text
@@ -314,21 +307,23 @@ FEEDBACK:
     except Exception as e:
         return f"Error: {e}"
 
-def extract_marks(text):
-    match = re.search(r"FINAL_MARKS:\s*(\d+)/(\d+)", text)
-    return int(match.group(1)) if match else None
-
 def generate_summary(pdf_path):
     try:
-        images = convert_from_path(pdf_path, poppler_path=POPPLER_PATH)
-        prompt = "Summarize this engineering solution in 8 technical sentences."
+        # ✅ FIX: Removed poppler_path
+        images = convert_from_path(pdf_path)
+        
+        # ✅ FIX: You must pass the images to Gemini, otherwise it can't see the PDF!
+        prompt = "Summarize this engineering solution in 8 technical sentences based on the provided images."
+        
+        content_parts = [prompt] + images[:3] # Sending first 3 pages for a summary
+        
         response = client.models.generate_content(
             model=GEMINI_MODEL,
-            contents=prompt
+            contents=content_parts
         )
         return response.text
-    except:
-        return None
+    except Exception as e:
+        return f"Summary Error: {e}"
 
 # ================= LECTURER =================
 
