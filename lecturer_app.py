@@ -188,7 +188,14 @@ def extract_marks(text):
 
 if role == "lecturer":
 
-    tabs = st.tabs(["Semesters", "Subjects", "Assignments", "Submissions & AI", "Analytics"])
+    tabs = st.tabs([
+    "Semesters",
+    "Subjects",
+    "Assignments",
+    "Submissions & AI",
+    "Analytics",
+    "Manage Students"
+])
 
     # SEMESTERS
     with tabs[0]:
