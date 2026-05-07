@@ -257,7 +257,7 @@ with tabs[2]:
    
 
   # SUBMISSIONS & AI
-    with tabs[3]:
+with tabs[3]:
         df = pd.read_sql_query("""
         SELECT submissions.id, users.username, assignments.title,
                submissions.submission_file, submissions.marks
@@ -282,7 +282,7 @@ with tabs[2]:
                         conn.commit()
 
     # ANALYTICS
-    with tabs[4]:
+with tabs[4]:
         df = pd.read_sql_query("""
         SELECT assignments.title, submissions.marks
         FROM submissions
