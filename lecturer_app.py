@@ -373,13 +373,14 @@ if role == "lecturer":
                     INSERT INTO users(username, password, role, semester_id)
                     VALUES(?,?,?,?)
                     """, (
-                        username,
-                        hash_password(password),
+                        username.strip(),
+                        hash_password(password.strip()),
                         "student",
-                        semester_id
+                        int(semester_id)
                     ))
                     conn.commit()
                     st.success("✅ Student created successfully.")
+                    st.rerun()
                 except sqlite3.IntegrityError:
                     st.error("Username already exists.")
 
