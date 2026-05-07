@@ -531,7 +531,7 @@ debug_all_users = pd.read_sql_query(
     conn
 )
 
-st.write("ALL USERS TABLE:", debug_all_users)
+    st.write("ALL USERS TABLE:", debug_all_users)
 
         # Get student's semester
         student_info = pd.read_sql_query(
