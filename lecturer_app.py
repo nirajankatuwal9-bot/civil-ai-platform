@@ -524,7 +524,7 @@ elif role == "student":
 
     # ================= ASSIGNMENTS =================
     with tabs[0]:
-                st.write("SESSION USER ID:", st.session_state.user_id)
+        st.write("SESSION USER ID:", st.session_state.user_id)
 
         debug_all_users = pd.read_sql_query(
             "SELECT id, username, role, semester_id FROM users",
