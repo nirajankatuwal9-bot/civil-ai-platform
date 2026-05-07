@@ -468,7 +468,7 @@ if role == "lecturer":
                 use_container_width=True)
                 hide_index=True
             )
-        if not students.empty:
+    if not students.empty:
 
     student_options = {
         f"{row['semester']} | {row['username']} | {row['full_name']}": row['id']
