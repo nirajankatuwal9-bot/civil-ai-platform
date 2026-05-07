@@ -693,25 +693,6 @@ elif role == "student":
 
     # SUBMIT
     with tabs[0]:
-     
-        # ==========================================
-        # 🚨 THE X-RAY DB DUMP - DELETE AFTER WE FIX THIS
-        # ==========================================
-        st.error("🚨 DATABASE X-RAY 🚨")
-        
-        st.write("1. Who am I?")
-        user_df = pd.read_sql_query("SELECT id, username, role, semester_id FROM users WHERE username=?", conn, params=(st.session_state.user,))
-        st.dataframe(user_df)
-        
-        st.write("2. What Semesters exist?")
-        sems_df = pd.read_sql_query("SELECT * FROM semesters", conn)
-        st.dataframe(sems_df)
-        
-        st.write("3. What Subjects exist?")
-        subs_df = pd.read_sql_query("SELECT id, name, semester_id FROM subjects", conn)
-        st.dataframe(subs_df)
-        st.divider()
-        # ==========================================
         st.subheader("📚 My Pending Assignments")
         
         # 1. Automatically find this specific student's assigned semester
@@ -721,39 +702,67 @@ elif role == "student":
         )
         
         if not student_data.empty and pd.notna(student_data['semester_id'].iloc[0]):
-            # 🛡️ BULLETPROOF FIX: Convert ID to a clean string (removes .0 if it is a float)
-            raw_sem_id = str(student_data['semester_id'].iloc[0]).split('.')[0]
+            my_sem_id = int(student_data['semester_id'].iloc[0])
             
-            # 2. Fetch ALL subjects and let Python do the matching (ignores SQLite type errors)
-            all_subjects = pd.read_sql_query("SELECT * FROM subjects", conn)
+            # 2. Fetch ONLY the subjects for their assigned semester
+            subjects = pd.read_sql_query(
+                "SELECT * FROM subjects WHERE semester_id=?", 
+                conn, params=(my_sem_id,)
+            )
             
-            if not all_subjects.empty:
-                # Clean up the subject IDs the same way
-                all_subjects['clean_sem_id'] = all_subjects['semester_id'].astype(str).str.split('.').str[0]
-                
-                # Filter for only this student's subjects
-                subjects = all_subjects[all_subjects['clean_sem_id'] == raw_sem_id]
-                
-                if not subjects.empty:
-                    sub = st.selectbox("Filter by Subject", subjects["name"])
-                    sub_id = subjects[subjects["name"] == sub]["id"].values[0]
+            if not subjects.empty:
+                sub = st.selectbox("Filter by Subject", subjects["name"])
+                sub_id = subjects[subjects["name"] == sub]["id"].values[0]
 
-                    # 3. Fetch assignments for that subject
-                    assigns = pd.read_sql_query(
-                        "SELECT * FROM assignments WHERE subject_id=?", 
-                        conn, params=(int(sub_id),)
-                    )
-                    
-                    if not assigns.empty:
-                        for _, row in assigns.iterrows():
-                            with st.expander(f"📌 {row['title']} (Due: {row['due_date']})"):
-                                st.markdown("**Instructions:**")
-                                st.write(row['description'])
-                                st.divider()
-                                
+                # 3. Fetch assignments for that subject
+                assigns = pd.read_sql_query(
+                    "SELECT * FROM assignments WHERE subject_id=?", 
+                    conn, params=(int(sub_id),)
+                )
+                
+                if not assigns.empty:
+                    for _, row in assigns.iterrows():
+                        with st.expander(f"📌 {row['title']} (Due: {row['due_date']})"):
+                            st.markdown("**Instructions:**")
+                            st.write(row['description'])
+                            
+                            # ==========================================================
+                            # 1. SHOW THE LECTURER'S ASSIGNMENT FILE (IF IT EXISTS)
+                            # ==========================================================
+                            # Check what your database column is called (usually 'file_path' or 'assignment_file')
+                            file_col = 'file_path' if 'file_path' in row else 'assignment_file' if 'assignment_file' in row else None
+                            
+                            if file_col and pd.notna(row[file_col]) and str(row[file_col]).strip() != "":
+                                if os.path.exists(row[file_col]):
+                                    with open(row[file_col], "rb") as f:
+                                        st.download_button(
+                                            label="📄 Download Assignment File",
+                                            data=f,
+                                            file_name=os.path.basename(row[file_col]),
+                                            mime="application/pdf",
+                                            key=f"dl_{row['id']}"
+                                        )
+                                else:
+                                    st.warning("⚠️ The attached file could not be found on the server.")
+                            
+                            st.divider()
+
+                            # ==========================================================
+                            # 2. CHECK IF THE STUDENT ALREADY SUBMITTED
+                            # ==========================================================
+                            prev_sub = pd.read_sql_query(
+                                "SELECT * FROM submissions WHERE assignment_id=? AND student_name=?",
+                                conn, params=(int(row['id']), st.session_state.user)
+                            )
+                            
+                            if not prev_sub.empty:
+                                st.success("✅ You have already submitted this assignment.")
+                                st.write(f"**Submitted at:** {prev_sub['submission_time'].iloc[0]}")
+                            else:
+                                # Show the uploader only if they haven't submitted yet
                                 pdf = st.file_uploader(f"Upload PDF for {row['title']}", type=["pdf"], key=f"up_{row['id']}")
                                 
-                                if st.button("Submit", key=f"btn_{row['id']}"):
+                                if st.button("Submit Assignment", key=f"btn_{row['id']}"):
                                     if pdf:
                                         if not os.path.exists("submission_files"):
                                             os.makedirs("submission_files")
@@ -768,14 +777,13 @@ elif role == "student":
                                         """, (int(row['id']), st.session_state.user, str(datetime.now()), path, ""))
                                         conn.commit()
                                         st.success(f"Submitted '{row['title']}' Successfully! ✅")
+                                        st.rerun() # Refresh the page instantly to hide the upload box!
                                     else:
                                         st.warning("Please upload a PDF first.")
-                    else:
-                        st.info(f"🎉 No pending assignments for {sub} right now!")
                 else:
-                    st.warning("No subjects have been assigned to your semester yet.")
+                    st.info(f"🎉 No pending assignments for {sub} right now!")
             else:
-                st.warning("No subjects exist in the database.")
+                st.warning("No subjects have been assigned to your semester yet.")
         else:
             st.error("Error: Your account is not properly assigned to a semester. Please contact the Lecturer.")
 
