@@ -278,22 +278,35 @@ if role == "lecturer":
         if sems.empty:
             st.warning("Please create a semester first.")
         else:
-            sem = st.selectbox("Semester", sems["name"])
+            sem = st.selectbox("Semester", sems["name"], key="subject_semester")
             sem_id = int(sems[sems["name"] == sem]["id"].values[0])
-            sub = st.text_input("Subject Name")
+
+            st.write("DEBUG selected semester id:", sem_id)
+            
+            sub = st.text_input("Subject Name", key="subject_name")
             
             if st.button("Add Subject"):
                 if not sub.strip():
                     st.error("Subject name cannot be empty.")
                 else:
-                    c.execute(
-                        "INSERT INTO subjects(name,semester_id) VALUES(?,?)",
-                        (sub.strip(), int(sem_id))
-                    )
-                    conn.commit()
-                    st.success("Added")
-                    st.rerun()
-
+                    try:
+                        c.execute(
+                            "INSERT INTO subjects(name,semester_id) VALUES(?,?)",
+                            (sub.strip(), int(sem_id))
+                        )
+                        conn.commit()
+                        st.success("Added")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error adding subject: {e}")
+            st.divider()
+            st.subheader("Subjects for Selected Semester")
+            subjects_for_sem = pd.read_sql_query(
+                "SELECT * FROM subjects WHERE semester_id=?",
+                conn,
+                params=(int(sem_id),)
+            )
+                
             st.dataframe(
                 pd.read_sql_query(
                     "SELECT * FROM subjects WHERE semester_id=?",
@@ -303,7 +316,10 @@ if role == "lecturer":
                 use_container_width=True,
                 hide_index=True
             )
-
+            st.divider()
+            st.subheader("All Subjects Debug")
+            all_subjects_debug = pd.read_sql_query("SELECT * FROM subjects", conn)
+            st.dataframe(all_subjects_debug, use_container_width=True, hide_index=True)
     # ASSIGNMENTS
     with tabs[2]:
 # sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
