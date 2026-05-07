@@ -322,6 +322,10 @@ if role == "lecturer":
                 conn,
                 params= (sem_id,)
             )
+            #TEMPORARY================
+            st.write("DEBUG sem_id:", sem_id)
+            st.write("DEBUG subjects returned:", subjects)
+            st.write("DEBUG all subjects:", pd.read_sql_query("SELECT * FROM subjects", conn))
 
             if subjects.empty:
                 st.warning("Please create a subject for this semester first.")
