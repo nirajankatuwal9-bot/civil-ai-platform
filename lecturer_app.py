@@ -524,6 +524,14 @@ elif role == "student":
 
     # ================= ASSIGNMENTS =================
     with tabs[0]:
+        st.write("SESSION USER ID:", st.session_state.user_id)
+
+debug_all_users = pd.read_sql_query(
+    "SELECT id, username, role, semester_id FROM users",
+    conn
+)
+
+st.write("ALL USERS TABLE:", debug_all_users)
 
         # Get student's semester
         student_info = pd.read_sql_query(
