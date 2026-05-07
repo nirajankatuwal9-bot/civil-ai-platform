@@ -740,7 +740,7 @@ elif role == "student":
     tabs = st.tabs(["📝 Submit Assignment","🧪 Take Exam","📊 My Results"])
 
     # SUBMIT
-with tabs[0]:
+ with tabs[0]:
     st.subheader("📚 My Pending Assignments")
     
     # ===== DEBUGGING SECTION - ADD THIS =====
