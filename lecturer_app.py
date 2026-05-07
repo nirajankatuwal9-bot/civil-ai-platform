@@ -244,7 +244,7 @@ if role == "lecturer":
         sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn) 
         if not sems.empty:
             semester_options={
-                f"{row['name']} (ID:{row['id']})': row['id']
+                f"{row['name']} (ID:{row['id']})": row['id']
                 for _, row in sems.iterrows()
             }
 
