@@ -1,307 +1,415 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-from datetime import datetime, date
+from datetime import datetime
 import os
-import io
-import bcrypt
-import plotly.express as px
-from pdf2image import convert_from_path
+import re
+from difflib import SequenceMatcher
 from google import genai
+from pdf2image import convert_from_path
+import io
+import base64
+import bcrypt
 
 # ================= CONFIG =================
-st.set_page_config(page_title="Civil-AI Pro", page_icon="🏗️", layout="wide")
 
-st.markdown("""
-    <style>
-    .main { background-color: #f4f7f9; }
-    .card { background-color: white; padding: 20px; border-radius: 10px; border-left: 5px solid #004b87; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .stHeader { background-color: #004b87; color: white; padding: 10px; border-radius: 5px; }
-    </style>
-    """, unsafe_allow_html=True)
+st.set_page_config(
+    page_title="Civil Engineering AI Platform",
+    page_icon="🏗️",
+    layout="wide"
+)
 
-GEMINI_MODEL = "gemini-3-flash-preview"
-client = genai.Client(api_key=st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY"))
+GEMINI_MODEL = "gemini-1.5-flash"
+POPPLER_PATH = None  # Set if using Windows locally
 
-# ================= DB & SELF-REPAIR =================
-DB_PATH = "data/lecturer.db"
-for folder in ["data", "submission_files", "study_materials"]:
-    os.makedirs(folder, exist_ok=True)
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+# ================= FOLDERS =================
+
+os.makedirs("data", exist_ok=True)
+os.makedirs("assignment_files", exist_ok=True)
+os.makedirs("submission_files", exist_ok=True)
+
+# ================= DATABASE =================
+
+conn = sqlite3.connect("data/lecturer.db", check_same_thread=False)
 c = conn.cursor()
 
-def build_db():
-    c.execute("CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, role TEXT, semester_id INTEGER)")
-    c.execute("CREATE TABLE IF NOT EXISTS semesters(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)")
-    c.execute("CREATE TABLE IF NOT EXISTS subjects(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, semester_id INTEGER)")
-    c.execute("CREATE TABLE IF NOT EXISTS assignments(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, subject_id INTEGER, deadline TEXT, question_file TEXT)")
-    c.execute("CREATE TABLE IF NOT EXISTS submissions(id INTEGER PRIMARY KEY AUTOINCREMENT, assignment_id INTEGER, user_id INTEGER, submission_time TEXT, submission_file TEXT, marks TEXT, ai_feedback TEXT)")
-    c.execute("CREATE TABLE IF NOT EXISTS study_materials(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, subject_id INTEGER, file_path TEXT, upload_date TEXT)")
-    
-    # Auto-repair DB
-    cols = [col[1] for col in c.execute("PRAGMA table_info(submissions)").fetchall()]
-    if "ai_feedback" not in cols:
-        c.execute("ALTER TABLE submissions ADD COLUMN ai_feedback TEXT")
+# USERS
+c.execute("""
+CREATE TABLE IF NOT EXISTS users(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE,
+    password TEXT,
+    role TEXT,
+    semester_id INTEGER
+)
+""")
+
+# SEMESTERS
+c.execute("""
+CREATE TABLE IF NOT EXISTS semesters(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE
+)
+""")
+
+# SUBJECTS
+c.execute("""
+CREATE TABLE IF NOT EXISTS subjects(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    semester_id INTEGER
+)
+""")
+
+# ASSIGNMENTS
+c.execute("""
+CREATE TABLE IF NOT EXISTS assignments(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    subject_id INTEGER,
+    deadline TEXT,
+    question_file TEXT
+)
+""")
+
+# SUBMISSIONS
+c.execute("""
+CREATE TABLE IF NOT EXISTS submissions(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    assignment_id INTEGER,
+    student_id INTEGER,
+    submission_time TEXT,
+    submission_file TEXT,
+    marks TEXT,
+    ai_summary TEXT
+)
+""")
+
+# QUIZZES
+c.execute("""
+CREATE TABLE IF NOT EXISTS quizzes(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    subject_id INTEGER,
+    total_marks INTEGER,
+    max_attempts INTEGER,
+    duration_minutes INTEGER
+)
+""")
+
+# MCQ QUESTIONS
+c.execute("""
+CREATE TABLE IF NOT EXISTS mcq_questions(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    quiz_id INTEGER,
+    question TEXT,
+    option_a TEXT,
+    option_b TEXT,
+    option_c TEXT,
+    option_d TEXT,
+    correct_answer TEXT
+)
+""")
+
+# QUIZ ATTEMPTS
+c.execute("""
+CREATE TABLE IF NOT EXISTS quiz_attempts(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    quiz_id INTEGER,
+    score REAL,
+    attempt_time TEXT
+)
+""")
+
+conn.commit()
+
+# ================= PASSWORD HELPERS =================
+
+def hash_password(p):
+    return bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
+
+def check_password(p, hashed):
+    return bcrypt.checkpw(p.encode(), hashed.encode())
+
+# ================= DEFAULT ADMIN =================
+
+if pd.read_sql_query("SELECT * FROM users WHERE username='admin'", conn).empty:
+    c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
+              ("admin", hash_password("admin123"), "lecturer"))
     conn.commit()
 
-build_db()
+# ================= SESSION =================
 
-# ================= UTILS & AI ENGINE =================
-def hash_pw(password): return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-def check_pw(password, hashed):
-    try: return bcrypt.checkpw(password.encode(), hashed.encode())
-    except: return False
-
-def init_system():
-    c.execute("SELECT COUNT(*) FROM users WHERE role='lecturer'")
-    if c.fetchone()[0] == 0:
-        c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", ("admin", hash_pw("admin123"), "lecturer"))
-        c.execute("INSERT INTO semesters (name) VALUES (?)", ("I/I",))
-        conn.commit()
-
-init_system()
-
-def grade_with_ai(pdf_path, rubric="General Civil Engineering Rubric: Check for clear mathematical steps, correct SI units, and logical final conclusions."):
-    try:
-        # Convert first 3 pages to images for speed
-        images = convert_from_path(pdf_path, dpi=72, first_page=1, last_page=3) 
-        
-        prompt = f"""
-        You are a strict Civil Engineering Lecturer. Grade this student submission based on this rubric: {rubric}.
-        Analyze the provided document images. 
-        Return EXACTLY in this format (do not add extra markdown):
-        MARKS: [Score]/10
-        FEEDBACK: [1-2 sentences of specific feedback pointing out a strength or a flaw]
-        """
-        
-        response = client.models.generate_content(model=GEMINI_MODEL, contents=[prompt] + images)
-        text = response.text
-        
-        marks = "Pending"
-        feedback = text
-        if "MARKS:" in text:
-            marks = text.split("MARKS:")[1].split("\n")[0].strip()
-        if "FEEDBACK:" in text:
-            feedback = text.split("FEEDBACK:")[1].strip()
-            
-        return marks, feedback
-    except Exception as e:
-        return None, f"Grading Error: {str(e)}"
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
 
 # ================= LOGIN =================
-if "logged_in" not in st.session_state:
-    st.session_state.update({"logged_in": False, "role": None, "user": None, "user_id": None, "semester_id": None})
 
 if not st.session_state.logged_in:
-    st.title("🏗️ Civil-AI Institutional Portal")
-    with st.container(border=True):
-        u = st.text_input("Username")
-        p = st.text_input("Password", type="password")
-        if st.button("Login"):
-            res = pd.read_sql_query("SELECT * FROM users WHERE username=?", conn, params=(u,))
-            if not res.empty and check_pw(p, res.iloc[0]["password"]):
-                st.session_state.update({
-                    "logged_in": True, "role": res.iloc[0]["role"], 
-                    "user": res.iloc[0]["username"], "user_id": res.iloc[0]["id"], 
-                    "semester_id": res.iloc[0]["semester_id"]
-                })
-                st.rerun()
-            else: st.error("Access Denied.")
+
+    st.title("🏗️ Civil Engineering AI Platform")
+
+    user = st.text_input("Username")
+    pw = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+
+        df = pd.read_sql_query("SELECT * FROM users WHERE username=?", conn, params=(user,))
+        if not df.empty and check_password(pw, df.iloc[0]["password"]):
+            st.session_state.logged_in = True
+            st.session_state.user_id = df.iloc[0]["id"]
+            st.session_state.role = df.iloc[0]["role"]
+            st.session_state.username = df.iloc[0]["username"]
+            st.rerun()
+        else:
+            st.error("Invalid credentials")
+
     st.stop()
 
-# ================= LECTURER DASHBOARD =================
-if st.session_state.role == "lecturer":
-    tabs = st.tabs(["📊 Analytics", "📚 Library", "📁 Assignments", "📝 Submissions", "👥 Students", "⚙️ Setup"])
+# ================= LOGOUT =================
 
-    with tabs[5]: # SETUP
-        c1, c2 = st.columns(2)
-        with c1:
-            st.subheader("Add Semester")
-            sn = st.text_input("Semester Name (e.g., I/I, III/II)")
-            if st.button("Save Semester"):
-                c.execute("INSERT INTO semesters (name) VALUES (?)", (sn,))
-                conn.commit(); st.rerun()
-        with c2:
-            st.subheader("Add Subject")
-            all_sems = pd.read_sql_query("SELECT * FROM semesters", conn)
-            if not all_sems.empty:
-                target_sem = st.selectbox("Select Semester", all_sems["name"], key="setup_s")
-                sub_name = st.text_input("Subject Name")
-                if st.button("Save Subject"):
-                    sid = all_sems[all_sems["name"]==target_sem]["id"].values[0]
-                    c.execute("INSERT INTO subjects (name, semester_id) VALUES (?,?)", (sub_name, int(sid)))
-                    conn.commit(); st.success(f"Subject '{sub_name}' added!"); st.rerun()
-
-    with tabs[2]: # ASSIGNMENTS
-        st.subheader("Publish New Assignment")
-        sub_query = "SELECT subjects.id, subjects.name || ' (' || semesters.name || ')' as full_label FROM subjects JOIN semesters ON subjects.semester_id = semesters.id"
-        full_subs = pd.read_sql_query(sub_query, conn)
-        
-        if not full_subs.empty:
-            a_label = st.selectbox("Select Subject & Semester", full_subs["full_label"])
-            a_title = st.text_input("Assignment Title")
-            a_due = st.date_input("Deadline", min_value=date.today())
-            a_file = st.file_uploader("Upload Question (PDF)", type="pdf")
-            
-            if st.button("Publish Assignment"):
-                selected_id = full_subs[full_subs["full_label"] == a_label]["id"].values[0]
-                path = f"submission_files/Q_{a_file.name}" if a_file else ""
-                if a_file:
-                    with open(path, "wb") as f: f.write(a_file.getbuffer())
-                
-                c.execute("INSERT INTO assignments (title, subject_id, deadline, question_file) VALUES (?,?,?,?)", 
-                          (a_title, int(selected_id), str(a_due), path))
-                conn.commit(); st.success(f"✅ Visible to students in {a_label}!")
-
-    with tabs[3]: # SUBMISSIONS & AI GRADING (RESTORED & UPGRADED)
-        st.subheader("Submissions & AI Grading Report")
-        df_s = pd.read_sql_query("""
-            SELECT s.id, u.username as roll, a.title, s.submission_time, s.submission_file, s.marks, s.ai_feedback 
-            FROM submissions s 
-            JOIN users u ON s.user_id = u.id 
-            JOIN assignments a ON s.assignment_id = a.id
-        """, conn)
-        
-        if not df_s.empty:
-            # Export Gradebook
-            csv = df_s.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download Grade Report (CSV)", csv, "grade_report.csv", "text/csv")
-            
-            rubric_input = st.text_input("Custom Grading Rubric (Optional)", value="Standard Civil Engineering checking for correct formulas and units.")
-            
-            for _, r in df_s.iterrows():
-                with st.expander(f"📄 Roll: {r['roll']} | {r['title']} | Grade: {r['marks'] or 'Pending'}"):
-                    col_info, col_act = st.columns(2)
-                    with col_info:
-                        st.write(f"**Submitted:** {r['submission_time'][:16]}")
-                        st.write(f"**AI Feedback:** {r['ai_feedback'] or 'None yet'}")
-                    
-                    with col_act:
-                        if r['submission_file'] and os.path.exists(str(r['submission_file'])):
-                            with open(str(r['submission_file']), "rb") as f: 
-                                st.download_button("⬇️ Download Student Work", f, file_name=f"{r['roll']}.pdf", key=f"dl_{r['id']}")
-                            
-                            if st.button("🤖 Grade with AI", key=f"ai_{r['id']}"):
-                                with st.spinner("Gemini is analyzing the submission..."):
-                                    marks, feedback = grade_with_ai(str(r['submission_file']), rubric_input)
-                                    if marks:
-                                        c.execute("UPDATE submissions SET marks=?, ai_feedback=? WHERE id=?", (marks, feedback, int(r['id'])))
-                                        conn.commit()
-                                        st.success(f"Graded: {marks}")
-                                        st.rerun()
-                                    else:
-                                        st.error(feedback)
-                        else: st.error("⚠️ File missing from server.")
-        else: st.info("No student submissions to review yet.")
-
-    with tabs[1]: # LIBRARY
-        st.subheader("Publish Study Material")
-        subs = pd.read_sql_query("SELECT * FROM subjects", conn)
-        if not subs.empty:
-            m_title = st.text_input("Material Title")
-            m_sub = st.selectbox("Subject", subs["name"], key="lib_sub")
-            m_file = st.file_uploader("Upload PDF", type="pdf", key="lib_file")
-            if st.button("Publish Material") and m_file:
-                sid = subs[subs["name"]==m_sub]["id"].values[0]
-                path = f"study_materials/{m_file.name}"
-                with open(path, "wb") as f: f.write(m_file.getbuffer())
-                c.execute("INSERT INTO study_materials (title, subject_id, file_path, upload_date) VALUES (?,?,?,?)", (m_title, int(sid), path, str(date.today())))
-                conn.commit(); st.success("Published!")
-
-    with tabs[4]: # STUDENTS
-        st.subheader("Manage Students")
-        sems = pd.read_sql_query("SELECT * FROM semesters", conn)
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            st.write("**Manual Entry**")
-            m_user = st.text_input("Roll No")
-            m_pass = st.text_input("Assign Password", type="password")
-            m_sem = st.selectbox("Assign to Semester", sems["name"], key="stud_sem")
-            if st.button("Create Student Account"):
-                try:
-                    sid = sems[sems["name"]==m_sem]["id"].values[0]
-                    c.execute("INSERT INTO users (username, password, role, semester_id) VALUES (?,?,?,?)", (m_user, hash_pw(m_pass), "student", int(sid)))
-                    conn.commit(); st.success(f"User {m_user} registered!")
-                except: st.error("Duplicate Roll Number")
-        with col_m2:
-            st.write("**Bulk CSV Upload**")
-            csv_f = st.file_uploader("Upload CSV", type="csv")
-            if csv_f and st.button("Bulk Register"):
-                df_u = pd.read_csv(csv_f)
-                for _, r in df_u.iterrows():
-                    try:
-                        sid = sems[sems["name"]==str(r['semester']).strip()]["id"].values[0]
-                        c.execute("INSERT INTO users (username, password, role, semester_id) VALUES (?,?,?,?)", (str(r['username']), hash_pw(str(r['password'])), "student", int(sid)))
-                    except: pass
-                conn.commit(); st.success("Bulk Upload Complete!")
-                
-    with tabs[0]: # ANALYTICS
-        st.subheader("Performance Overview")
-        df_an = pd.read_sql_query("SELECT s.marks, sub.name as subject FROM submissions s JOIN assignments a ON s.assignment_id = a.id JOIN subjects sub ON a.subject_id = sub.id", conn)
-        if not df_an.empty:
-            df_an["marks"] = pd.to_numeric(df_an["marks"], errors='coerce').fillna(0)
-            st.plotly_chart(px.bar(df_an.groupby("subject")["marks"].mean().reset_index(), x="subject", y="marks", color="marks"), use_container_width=True)
-
-# ================= STUDENT DASHBOARD =================
-elif st.session_state.role == "student":
-    curr_sid = st.session_state.semester_id
-    st.title(f"Student Portal: {st.session_state.user}")
-    
-    if curr_sid is None:
-        st.error("⚠️ Configuration Error: You have not been assigned to a semester.")
-    else:
-        st_tabs = st.tabs(["📚 Study Materials", "📝 My Assignments", "📊 Results"])
-
-        with st_tabs[0]: # Linked Library
-            mats = pd.read_sql_query("SELECT sm.title, sm.file_path, s.name as subject FROM study_materials sm JOIN subjects s ON sm.subject_id = s.id WHERE s.semester_id = ?", conn, params=(int(curr_sid),))
-            if not mats.empty:
-                for _, m in mats.iterrows():
-                    with st.container(border=True):
-                        st.write(f"📖 **{m['title']}** ({m['subject']})")
-                        if os.path.exists(m['file_path']):
-                            with open(m['file_path'], "rb") as f: st.download_button("Download Notes", f, file_name=f"{m['title']}.pdf", key=f"l_{m['title']}")
-            else: st.info("No materials published for your semester yet.")
-
-        with st_tabs[1]: # Linked Assignments
-            assigns = pd.read_sql_query("SELECT a.id, a.title, a.deadline, a.question_file, s.name as subject FROM assignments a JOIN subjects s ON a.subject_id = s.id WHERE s.semester_id = ?", conn, params=(int(curr_sid),))
-            if not assigns.empty:
-                for _, a in assigns.iterrows():
-                    with st.container(border=True):
-                        st.subheader(f"📌 {a['title']}")
-                        st.write(f"**Subject:** {a['subject']} | **Deadline:** {a['deadline']}")
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if a['question_file'] and os.path.exists(a['question_file']):
-                                with open(a['question_file'], "rb") as f: st.download_button("📄 Download Question", f, file_name=f"Q_{a['title']}.pdf", key=f"q_{a['id']}")
-                        
-                        with col2:
-                            check = pd.read_sql_query("SELECT id FROM submissions WHERE assignment_id=? AND user_id=?", conn, params=(int(a['id']), st.session_state.user_id))
-                            if not check.empty:
-                                st.success("✅ Submission Received")
-                            else:
-                                up = st.file_uploader("Upload Solution (PDF)", type="pdf", key=f"up_{a['id']}")
-                                if st.button("Submit My Work", key=f"btn_{a['id']}") and up:
-                                    path = f"submission_files/{st.session_state.user}_{up.name}"
-                                    with open(path, "wb") as f: f.write(up.getbuffer())
-                                    c.execute("INSERT INTO submissions (assignment_id, user_id, submission_time, submission_file) VALUES (?,?,?,?)", (int(a['id']), st.session_state.user_id, str(datetime.now()), path))
-                                    conn.commit(); st.success("Submitted successfully!"); st.rerun()
-            else: st.info("No active assignments found for your semester.")
-
-        with st_tabs[2]: # Results
-            res = pd.read_sql_query("SELECT a.title, s.marks, s.ai_feedback FROM submissions s JOIN assignments a ON s.assignment_id = a.id WHERE s.user_id = ?", conn, params=(int(st.session_state.user_id),))
-            if not res.empty: st.dataframe(res, use_container_width=True, hide_index=True)
-            else: st.info("You haven't submitted anything yet.")
-
-# ================= SYSTEM =================
-st.sidebar.divider()
+st.sidebar.write(f"👤 {st.session_state.username} ({st.session_state.role})")
 if st.sidebar.button("Logout"):
-    st.session_state.update({"logged_in": False})
+    st.session_state.clear()
     st.rerun()
 
-if st.session_state.role == "lecturer":
-    if st.sidebar.button("🧨 Hard Reset (Wipe All Data)"):
-        c.execute("DROP TABLE IF EXISTS users"); c.execute("DROP TABLE IF EXISTS submissions")
-        c.execute("DROP TABLE IF EXISTS assignments"); c.execute("DROP TABLE IF EXISTS study_materials")
-        conn.commit(); st.rerun()
+role = st.session_state.role
+
+# ================= AI FUNCTIONS =================
+
+def vision_grade(pdf_path, rubric):
+    images = convert_from_path(pdf_path)
+    parts = [{"text": f"""
+You are a strict civil engineering professor.
+
+MODEL ANSWER:
+{rubric}
+
+Return exactly:
+FINAL_MARKS: X/10
+FEEDBACK:
+- bullet points
+"""}]
+
+    for img in images[:3]:
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        parts.append({
+            "inline_data": {
+                "mime_type": "image/png",
+                "data": base64.b64encode(buffer.getvalue()).decode()
+            }
+        })
+
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=[{"role": "user", "parts": parts}]
+    )
+
+    return response.text
+
+def extract_marks(text):
+    m = re.search(r"FINAL_MARKS:\s*(\d+)/10", text)
+    return int(m.group(1)) if m else None
+
+def generate_summary(pdf_path):
+    images = convert_from_path(pdf_path)
+    parts = [{"text": "Summarize this civil engineering submission."}]
+    for img in images[:2]:
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        parts.append({
+            "inline_data": {
+                "mime_type": "image/png",
+                "data": base64.b64encode(buffer.getvalue()).decode()
+            }
+        })
+
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=[{"role": "user", "parts": parts}]
+    )
+
+    return response.text
+
+# ==========================================================
+# ===================== LECTURER ============================
+# ==========================================================
+
+if role == "lecturer":
+
+    tabs = st.tabs([
+        "Semesters",
+        "Subjects",
+        "Assignments",
+        "Submissions & AI",
+        "Analytics"
+    ])
+
+    # SEMESTERS
+    with tabs[0]:
+        name = st.text_input("New Semester")
+        if st.button("Add Semester"):
+            c.execute("INSERT INTO semesters(name) VALUES(?)", (name,))
+            conn.commit()
+            st.success("Added")
+        st.dataframe(pd.read_sql_query("SELECT * FROM semesters", conn))
+
+    # SUBJECTS
+    with tabs[1]:
+        sems = pd.read_sql_query("SELECT * FROM semesters", conn)
+        if not sems.empty:
+            sem = st.selectbox("Semester", sems["name"])
+            sem_id = sems[sems["name"] == sem]["id"].values[0]
+
+            sub = st.text_input("Subject Name")
+            if st.button("Add Subject"):
+                c.execute("INSERT INTO subjects(name,semester_id) VALUES(?,?)",
+                          (sub, sem_id))
+                conn.commit()
+                st.success("Added")
+
+            st.dataframe(pd.read_sql_query(
+                "SELECT * FROM subjects WHERE semester_id=?", conn, params=(sem_id,)
+            ))
+
+    # ASSIGNMENTS
+    with tabs[2]:
+        subjects = pd.read_sql_query("""
+        SELECT subjects.id, subjects.name, semesters.name as semester
+        FROM subjects
+        JOIN semesters ON subjects.semester_id=semesters.id
+        """, conn)
+
+        if not subjects.empty:
+            sub = st.selectbox(
+                "Subject",
+                subjects["semester"] + " - " + subjects["name"]
+            )
+
+            sub_id = subjects.iloc[
+                (subjects["semester"] + " - " + subjects["name"] == sub).idxmax()
+            ]["id"]
+
+            title = st.text_input("Assignment Title")
+            deadline = st.date_input("Deadline")
+            file = st.file_uploader("Upload Question PDF", type=["pdf"])
+
+            if st.button("Create Assignment"):
+                path = ""
+                if file:
+                    path = f"assignment_files/{file.name}"
+                    with open(path, "wb") as f:
+                        f.write(file.getbuffer())
+
+                c.execute("""
+                INSERT INTO assignments(title,subject_id,deadline,question_file)
+                VALUES(?,?,?,?)
+                """, (title, sub_id, str(deadline), path))
+
+                conn.commit()
+                st.success("Assignment Created")
+
+    # SUBMISSIONS
+    with tabs[3]:
+        df = pd.read_sql_query("""
+        SELECT submissions.id, users.username, assignments.title,
+               submissions.submission_file, submissions.marks
+        FROM submissions
+        JOIN users ON submissions.student_id = users.id
+        JOIN assignments ON submissions.assignment_id = assignments.id
+        """, conn)
+
+        st.dataframe(df)
+
+        rubric = st.text_area("Rubric for AI grading")
+
+        for _, row in df.iterrows():
+            if st.button(f"AI Grade {row['username']}", key=row["id"]):
+                result = vision_grade(row["submission_file"], rubric)
+                st.write(result)
+                marks = extract_marks(result)
+                if marks:
+                    c.execute("UPDATE submissions SET marks=? WHERE id=?",
+                              (marks, row["id"]))
+                    conn.commit()
+
+    # ANALYTICS
+    with tabs[4]:
+        df = pd.read_sql_query("""
+        SELECT assignments.title, submissions.marks
+        FROM submissions
+        JOIN assignments ON submissions.assignment_id=assignments.id
+        """, conn)
+
+        if not df.empty:
+            df["marks"] = pd.to_numeric(df["marks"], errors="coerce")
+            st.bar_chart(df.groupby("title")["marks"].mean())
+
+# ==========================================================
+# ===================== STUDENT =============================
+# ==========================================================
+
+elif role == "student":
+
+    tabs = st.tabs(["Assignments", "My Results"])
+
+    # ASSIGNMENTS
+    with tabs[0]:
+
+        student = pd.read_sql_query(
+            "SELECT semester_id FROM users WHERE id=?",
+            conn, params=(st.session_state.user_id,)
+        )
+
+        sem_id = student.iloc[0]["semester_id"]
+
+        assignments = pd.read_sql_query("""
+        SELECT assignments.*, subjects.name as subject
+        FROM assignments
+        JOIN subjects ON assignments.subject_id=subjects.id
+        WHERE subjects.semester_id=?
+        """, conn, params=(sem_id,))
+
+        for _, row in assignments.iterrows():
+            with st.expander(row["title"]):
+
+                if row["question_file"] and os.path.exists(row["question_file"]):
+                    with open(row["question_file"], "rb") as f:
+                        st.download_button(
+                            "Download Assignment",
+                            f,
+                            file_name=os.path.basename(row["question_file"])
+                        )
+
+                uploaded = st.file_uploader("Upload Your PDF", type=["pdf"], key=row["id"])
+
+                if st.button("Submit", key=f"submit{row['id']}"):
+                    if uploaded:
+                        path = f"submission_files/{st.session_state.username}_{uploaded.name}"
+                        with open(path, "wb") as f:
+                            f.write(uploaded.getbuffer())
+
+                        c.execute("""
+                        INSERT INTO submissions(assignment_id,student_id,
+                        submission_time,submission_file,marks)
+                        VALUES(?,?,?,?,?)
+                        """, (row["id"], st.session_state.user_id,
+                              str(datetime.now()), path, ""))
+
+                        conn.commit()
+                        st.success("Submitted")
+
+    # RESULTS
+    with tabs[1]:
+        results = pd.read_sql_query("""
+        SELECT assignments.title, submissions.marks
+        FROM submissions
+        JOIN assignments ON submissions.assignment_id=assignments.id
+        WHERE submissions.student_id=?
+        """, conn, params=(st.session_state.user_id,))
+
+        st.dataframe(results)
