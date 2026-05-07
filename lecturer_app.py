@@ -306,7 +306,7 @@ if role == "lecturer":
 
     # ASSIGNMENTS
     with tabs[2]:
-
+# sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
         st.subheader("create New Assignment")
 
         sems = pd.read_sql_query("SELECT * FROM semesters", conn)
@@ -320,7 +320,7 @@ if role == "lecturer":
             subjects = pd.read_sql_query(
                 "SELECT * FROM subjects WHERE semester_id=?",
                 conn,
-                params=(sem_id,)
+                params=INT(sem_id,)
             )
 
             if subjects.empty:
