@@ -33,10 +33,6 @@ os.makedirs("submission_files", exist_ok=True)
 conn = sqlite3.connect("data/lecturer.db", check_same_thread=False)
 c = conn.cursor()
 
-
-# 🔥 TEMPORARY RESET (Run once then remove)
-reset_database()
-
 # USERS
 c.execute("""
 CREATE TABLE IF NOT EXISTS users(
