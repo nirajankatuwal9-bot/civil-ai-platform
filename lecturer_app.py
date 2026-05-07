@@ -238,7 +238,38 @@ if role == "lecturer":
             use_container_width=True,
             hide_index=True
         )
+        st.divider()
+        st.subheader("Delete Semester")
 
+        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn) 
+        if not sems.empty:
+            semester_options={
+                f"{row['name']} (ID:{row['id']})': row['id']
+                for _, row in sems.iterrows()
+            }
+
+            selected_sem = st.selectbox(
+                "select Semester to Delete",
+                list(semester_options.keys()),
+                key="delete_semester"
+            )
+            if st.button("Delete Selected Semester"):
+
+                sem_id = semester_options[selected_sem]
+                subject_ids=pd.read_sql_query(
+                    "SELECT id FROM subjects WHERE semester_id=?",
+                    conn,
+                    params=(sem_id,)
+                )
+                for _, row in subject_ids.iterrows():
+                    c.execute("DELETE FROM assignments WHERE subject_id=?", (row["id"],)) 
+                c.execute("DELETE FROM subjects WHERE semester_id=?", (sem_id,))
+                c.execute("UPDATE users SET semester_id=NULL WHERE semester_id=?", (sem_id,))
+                c.execute("DELETE FROM semesters WHERE id=?", (sem_id,))
+
+                conn.commit()
+                st.success("✅ Semester deleted successfully.")
+                st.rerun()
     # SUBJECTS
     with tabs[1]:
         
