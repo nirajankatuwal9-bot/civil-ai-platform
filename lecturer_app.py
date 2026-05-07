@@ -533,7 +533,7 @@ elif role == "student":
             params=(st.session_state.user_id,)
         )
 
-        if student_info.empty:
+if student_info.empty:
     st.warning("You are not assigned to a semester.")
     st.stop()
 
