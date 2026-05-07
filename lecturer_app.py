@@ -279,7 +279,12 @@ if role == "lecturer":
             st.warning("Please create a semester first.")
         else:
             sem = st.selectbox("Semester", sems["name"])
-            sem_id = int(sems[sems["name"] == sem]["id"].values[0])
+            sem_id = int(sems[sems["name"] == sem]["id"].vaLues[0])
+
+            c.execute(
+                "INSERT INTO subjects(name,semester_id) VALUES(?,?)",
+                (sub.strip(),int(sem_id)
+                )
 
             sub = st.text_input("Subject Name")
             if st.button("Add Subject"):
