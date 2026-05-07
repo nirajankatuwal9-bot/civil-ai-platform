@@ -38,6 +38,34 @@ def build_db():
 build_db()
 
 # ================= UTILS =================
+def grade_with_ai(pdf_path, rubric="General Civil Engineering Rubric: Check for clear mathematical steps, correct SI units, and logical final conclusions."):
+    try:
+        # Convert first 3 pages to images (to save API limits and speed up grading)
+        images = convert_from_path(pdf_path, dpi=72, first_page=1, last_page=3) 
+        
+        prompt = f"""
+        You are a strict Civil Engineering Lecturer. Grade this student submission based on this rubric: {rubric}.
+        Analyze the provided document images. 
+        Return EXACTLY in this format (do not add extra markdown):
+        MARKS: [Score]/10
+        FEEDBACK: [1-2 sentences of specific feedback pointing out a strength or a flaw]
+        """
+        
+        # Send to Gemini
+        response = client.models.generate_content(model=GEMINI_MODEL, contents=[prompt] + images)
+        text = response.text
+        
+        # Parse the output
+        marks = "Pending"
+        feedback = text
+        if "MARKS:" in text:
+            marks = text.split("MARKS:")[1].split("\n")[0].strip()
+        if "FEEDBACK:" in text:
+            feedback = text.split("FEEDBACK:")[1].strip()
+            
+        return marks, feedback
+    except Exception as e:
+        return None, f"Grading Error: {str(e)}"
 def hash_pw(password): return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 def check_pw(password, hashed):
     try: return bcrypt.checkpw(password.encode(), hashed.encode())
