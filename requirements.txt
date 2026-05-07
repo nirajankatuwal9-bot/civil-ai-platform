@@ -3,3 +3,4 @@ pandas
 google-genai
 pdf2image
 bcrypt
+plotly
