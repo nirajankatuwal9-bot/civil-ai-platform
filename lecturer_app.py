@@ -397,54 +397,117 @@ if role == "lecturer":
             
 
     # ASSIGNMENTS
-    with tabs[2]:
-        subjects = pd.read_sql_query("SELECT * FROM subjects",conn)
-        if not subjects.empty:
-            sub = st.selectbox("Subject",subjects["name"],key="assign_sub")
-            sub_id = subjects[subjects["name"]==sub]["id"].values[0]
+with tabs[2]:
+    st.subheader("📝 Create New Assignment")
+    
+    subjects = pd.read_sql_query("SELECT * FROM subjects", conn)
+    
+    if subjects.empty:
+        st.warning("⚠️ Please create subjects first before adding assignments.")
+    else:
+        sub = st.selectbox("Subject", subjects["name"], key="assign_sub")
+        sub_id = subjects[subjects["name"] == sub]["id"].values[0]
 
-            title = st.text_input("Assignment Title",key="assign_title")
-            deadline = st.date_input("Deadline",key="assign_deadline")
-            
-            # ✅ Added File Uploader for Lecturer
-            assign_pdf = st.file_uploader("Upload Question/Reference PDF (Optional)", type=["pdf"], key="lecturer_pdf")
+        title = st.text_input("Assignment Title", key="assign_title")
+        deadline = st.date_input("Deadline", key="assign_deadline")
+        
+        # ✅ File Uploader for Lecturer
+        assign_pdf = st.file_uploader("Upload Question/Reference PDF (Optional)", type=["pdf"], key="lecturer_pdf")
 
-            if st.button("Create Assignment"):
+        if st.button("Create Assignment"):
+            if not title:
+                st.error("⚠️ Please enter an assignment title!")
+            else:
                 file_path = ""
                 
                 # If the lecturer uploads a file, save it
                 if assign_pdf:
-                    file_path = f"submission_files/assignment_{assign_pdf.name}"
-                    with open(file_path, "wb") as f:
-                        f.write(assign_pdf.getbuffer())
+                    # ✅ Create folder if it doesn't exist
+                    if not os.path.exists("submission_files"):
+                        os.makedirs("submission_files")
+                    
+                    # ✅ Save with unique name
+                    file_path = f"submission_files/assignment_{title.replace(' ', '_')}_{assign_pdf.name}"
+                    
+                    try:
+                        with open(file_path, "wb") as f:
+                            f.write(assign_pdf.getbuffer())
+                        st.success(f"✅ File uploaded: {file_path}")
+                    except Exception as e:
+                        st.error(f"File upload failed: {e}")
+                        file_path = ""
 
                 # Insert into database with the file_path
-                c.execute("INSERT INTO assignments(title,subject_id,deadline,question_file) VALUES(?,?,?,?)",
-                          (title,sub_id,str(deadline), file_path))
-                conn.commit()
-                st.success("Created Assignment Successfully ✅")
+                try:
+                    c.execute(
+                        "INSERT INTO assignments(title, subject_id, deadline, question_file) VALUES(?,?,?,?)",
+                        (title, int(sub_id), str(deadline), file_path)
+                    )
+                    conn.commit()
+                    st.success(f"✅ Assignment '{title}' created successfully!")
+                    
+                    # ✅ IMPORTANT: Clear the cache and rerun to show new assignment
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"❌ Error creating assignment: {e}")
 
-            st.dataframe(pd.read_sql_query("""
-            SELECT assignments.title,subjects.name
-            FROM assignments
-            JOIN subjects ON assignments.subject_id=subjects.id
-            """,conn))
-            st.divider()
-        st.subheader("⚠️ Danger Zone: Delete Assignment")
+    st.divider()
+    
+    # ✅ Show existing assignments with proper refresh
+    st.subheader("📚 Existing Assignments")
+    
+    # ✅ Force fresh data load (not cached)
+    all_assignments = pd.read_sql_query("""
+        SELECT 
+            assignments.id,
+            assignments.title,
+            subjects.name AS subject,
+            assignments.deadline,
+            assignments.question_file
+        FROM assignments
+        JOIN subjects ON assignments.subject_id = subjects.id
+        ORDER BY assignments.deadline DESC
+    """, conn)
+    
+    if all_assignments.empty:
+        st.info("No assignments created yet.")
+    else:
+        # ✅ Show in a nice table format
+        st.dataframe(
+            all_assignments[['title', 'subject', 'deadline', 'question_file']], 
+            use_container_width=True,
+            hide_index=True
+        )
+    
+    st.divider()
+    
+    # ✅ Delete Assignment Section
+    st.subheader("⚠️ Danger Zone: Delete Assignment")
+    
+    if not all_assignments.empty:
+        assign_to_delete = st.selectbox(
+            "Select Assignment to Delete", 
+            all_assignments["title"], 
+            key="del_ass"
+        )
         
-        all_assigns = pd.read_sql_query("SELECT id, title FROM assignments", conn)
-        if not all_assigns.empty:
-            assign_to_delete = st.selectbox("Select Assignment", all_assigns["title"], key="del_ass")
-            if st.button("🗑️ Delete Assignment", type="primary"):
-                ass_id = all_assigns[all_assigns["title"] == assign_to_delete]["id"].values[0]
-                
+        if st.button("🗑️ Delete Assignment", type="primary"):
+            ass_id = all_assignments[all_assignments["title"] == assign_to_delete]["id"].values[0]
+            
+            try:
+                # Delete the assignment
                 c.execute("DELETE FROM assignments WHERE id=?", (int(ass_id),))
+                
                 # Also remove student submissions for this assignment
                 c.execute("DELETE FROM submissions WHERE assignment_id=?", (int(ass_id),))
                 
                 conn.commit()
-                st.success(f"'{assign_to_delete}' deleted successfully!")
+                st.success(f"✅ '{assign_to_delete}' deleted successfully!")
                 st.rerun()
+                
+            except Exception as e:
+                st.error(f"❌ Error deleting assignment: {e}")
 
     # SUBMISSIONS & AI
     with tabs[3]:
