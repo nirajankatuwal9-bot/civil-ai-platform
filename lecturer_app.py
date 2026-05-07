@@ -579,7 +579,7 @@ if role == "lecturer":
             df["marks_num"]=pd.to_numeric(df["marks"],errors="coerce")
             st.bar_chart(df.groupby("title")["marks_num"].mean())
     # MANAGE STUDENTS
-   # MANAGE STUDENTS
+  # MANAGE STUDENTS
     with tabs[7]:
         st.subheader("Manage Student Roster")
         
@@ -660,7 +660,6 @@ if role == "lecturer":
             st.warning("⚠️ Please create Semesters (like I/I, I/II) first.")
 
         st.divider()
-        st.divider()
         st.subheader("⚠️ Danger Zone: Remove Student")
         col1, col2 = st.columns([3, 1])
         
@@ -673,7 +672,7 @@ if role == "lecturer":
         with col2:
             st.write("") # Spacing
             st.write("") # Spacing
-            if st.button("🗑️ Delete Student", type="primary"):
+            if 'student_to_delete' in locals() and st.button("🗑️ Delete Student", type="primary"):
                 try:
                     c.execute("DELETE FROM users WHERE username=?", (student_to_delete,))
                     conn.commit()
@@ -695,6 +694,46 @@ if role == "lecturer":
             
             if not students_df.empty:
                 st.dataframe(students_df, use_container_width=True, hide_index=True)
+
+        # ==========================================
+        # 🚨 SYSTEM FACTORY RESET (LECTURER ONLY)
+        # ==========================================
+        st.divider()
+        st.subheader("🚨 System Factory Reset")
+        st.error("⚠️ **WARNING:** This action is irreversible. It will permanently delete ALL students, semesters, subjects, assignments, quizzes, and grades. It will NOT delete your Lecturer account.")
+        
+        # The Safety Lock
+        confirm_text = st.text_input("Type **DELETE EVERYTHING** in the box below to unlock the reset button:", key="reset_lock")
+        
+        # The button is disabled unless the text matches exactly
+        if st.button("🔴 EXECUTE HARD RESET", type="primary", disabled=(confirm_text != "DELETE EVERYTHING")):
+            try:
+                # 1. Wipe all data tables
+                c.execute("DELETE FROM quiz_attempts")
+                c.execute("DELETE FROM mcq_questions")
+                c.execute("DELETE FROM quizzes")
+                c.execute("DELETE FROM submissions")
+                c.execute("DELETE FROM assignments")
+                c.execute("DELETE FROM subjects")
+                c.execute("DELETE FROM semesters")
+                
+                # 2. Wipe all student accounts (Keep the 'lecturer' account safe!)
+                c.execute("DELETE FROM users WHERE role='student'") 
+                
+                # 3. Commit changes to the database
+                conn.commit()
+                
+                # 4. Optional: Clean up the submission_files folder
+                import shutil
+                if os.path.exists("submission_files"):
+                    shutil.rmtree("submission_files")
+                    os.makedirs("submission_files") # Recreate empty folder
+                
+                st.success("✅ System Reset Complete! The database is completely clean.")
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"❌ Error during reset: {e}")
 # ================= STUDENT =================
 
 elif role == "student":
