@@ -702,18 +702,34 @@ elif role == "student":
 with tabs[0]:
     st.subheader("📚 My Pending Assignments")
     
+    # ===== DEBUGGING SECTION - ADD THIS =====
+    st.write("🔍 **Debug Info:**")
+    st.write(f"Logged in as: {st.session_state.user}")
+    st.write(f"User ID: {st.session_state.user_id}")
+    
     # 1. Get student's semester assignment
     student_data = pd.read_sql_query(
-        "SELECT semester_id FROM users WHERE username=?", 
+        "SELECT * FROM users WHERE username=?", 
         conn, params=(st.session_state.user,)
     )
     
+    st.write("Student Data:", student_data)
+    
     # ✅ CHECK IF STUDENT HAS A SEMESTER ASSIGNED
-    if student_data.empty or pd.isna(student_data['semester_id'].iloc[0]) or student_data['semester_id'].iloc[0] is None:
+    if student_data.empty:
+        st.error("❌ Student record not found!")
+        st.stop()
+    
+    if pd.isna(student_data['semester_id'].iloc[0]) or student_data['semester_id'].iloc[0] is None:
         st.warning("⚠️ You have not been assigned to a semester yet. Please contact your lecturer.")
+        
+        # Show all semesters for debugging
+        all_sems = pd.read_sql_query("SELECT * FROM semesters", conn)
+        st.write("Available semesters:", all_sems)
         st.stop()
     
     my_sem_id = int(student_data['semester_id'].iloc[0])
+    st.write(f"My Semester ID: {my_sem_id}")
     
     # Show which semester they're in
     sem_name = pd.read_sql_query("SELECT name FROM semesters WHERE id=?", conn, params=(my_sem_id,))
@@ -726,18 +742,33 @@ with tabs[0]:
         conn, params=(my_sem_id,)
     )
     
+    st.write("My Subjects:", subjects)
+    
     if subjects.empty:
         st.warning("No subjects found for your semester.")
+        
+        # Show all subjects for debugging
+        all_subjects = pd.read_sql_query("SELECT * FROM subjects", conn)
+        st.write("All subjects in system:", all_subjects)
         st.stop()
     
     sub = st.selectbox("Filter by Subject", subjects["name"], key="student_subject_filter")
     sub_id = subjects[subjects["name"] == sub]["id"].values[0]
+    st.write(f"Selected Subject ID: {sub_id}")
 
     # 3. Fetch assignments for that subject
     assigns = pd.read_sql_query(
         "SELECT * FROM assignments WHERE subject_id=?", 
         conn, params=(int(sub_id),)
     )
+    
+    st.write("Assignments for this subject:", assigns)
+    
+    # Show all assignments for debugging
+    all_assigns = pd.read_sql_query("SELECT * FROM assignments", conn)
+    st.write("All assignments in system:", all_assigns)
+    
+    # ===== END DEBUGGING =====
     
     if assigns.empty:
         st.info(f"🎉 No pending assignments for **{sub}** right now!")
@@ -748,8 +779,13 @@ with tabs[0]:
                 # ==========================================================
                 # 1. SHOW THE LECTURER'S ASSIGNMENT FILE
                 # ==========================================================
+                st.write(f"Question file path: {row['question_file']}")
+                
                 if pd.notna(row['question_file']) and str(row['question_file']).strip() != "":
                     file_path = str(row['question_file']).strip()
+                    
+                    st.write(f"Checking if file exists: {file_path}")
+                    st.write(f"File exists: {os.path.exists(file_path)}")
                     
                     if os.path.exists(file_path):
                         try:
@@ -766,6 +802,8 @@ with tabs[0]:
                             st.error(f"Error reading file: {e}")
                     else:
                         st.warning(f"⚠️ File not found: {file_path}")
+                        st.write(f"Current working directory: {os.getcwd()}")
+                        st.write(f"Files in submission_files: {os.listdir('submission_files') if os.path.exists('submission_files') else 'Folder not found'}")
                 else:
                     st.info("ℹ️ No reference file attached by lecturer.")
                 
