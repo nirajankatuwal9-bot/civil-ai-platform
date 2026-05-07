@@ -29,9 +29,7 @@ os.makedirs("assignment_files", exist_ok=True)
 os.makedirs("submission_files", exist_ok=True)
 
 # ================= DATABASE =================
-# ✅ ONE-TIME DATABASE RESET
-if os.path.exists("data/lecturer.db"):
-    os.remove("data/lecturer.db")
+
 conn = sqlite3.connect("data/lecturer.db", check_same_thread=False)
 c = conn.cursor()
 # ✅ CLOUD SAFE MIGRATION FOR full_name COLUMN
