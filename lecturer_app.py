@@ -37,6 +37,7 @@ c = conn.cursor()
 c.execute("""
 CREATE TABLE IF NOT EXISTS users(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    full_name TEXT,
     username TEXT UNIQUE,
     password TEXT,
     role TEXT,
@@ -381,9 +382,10 @@ if role == "lecturer":
             else:
                 try:
                     c.execute("""
-                    INSERT INTO users(username, password, role, semester_id)
-                    VALUES(?,?,?,?)
+                    INSERT INTO users(full_name, username, password, role, semester_id)
+                    VALUES(?,?,?,?,?)
                     """, (
+                        student_name.strip(),
                         username.strip(),
                         hash_password(password.strip()),
                         "student",
@@ -428,9 +430,10 @@ if role == "lecturer":
 
                         try:
                             c.execute("""
-                            INSERT INTO users(username, password, role, semester_id)
-                            VALUES(?,?,?,?)
+                            INSERT INTO users(full_name, username, password, role, semester_id)
+                            VALUES(?,?,?,?,?)
                             """, (
+                                row["name"],
                                 row["username"],
                                 hash_password(str(row["password"])),
                                 "student",
@@ -450,17 +453,42 @@ if role == "lecturer":
         st.subheader("Student List")
 
         students = pd.read_sql_query("""
-        SELECT users.username, semesters.name as semester
+        SELECT users.id, users.username, semesters.name as semester
         FROM users
         JOIN semesters ON users.semester_id = semesters.id
         WHERE users.role='student'
-        ORDER BY semesters.name
+        ORDER BY semesters.name ASC, users.username ASC
         """, conn)
 
         if students.empty:
             st.info("No students added yet.")
         else:
-            st.dataframe(students, use_container_width=True)
+            st.dataframe(
+                students[["semester", "username", "full_name"]],
+                use_container_width=True)
+                hide_index=True
+            )
+        if not students.empty:
+
+    student_options = {
+        f"{row['semester']} | {row['username']} | {row['full_name']}": row['id']
+        for _, row in students.iterrows()
+    }
+
+    selected_student = st.selectbox(
+        "Select Student to Delete",
+        list(student_options.keys())
+    )
+
+    if st.button("Delete Selected Student"):
+
+        student_id = student_options[selected_student]
+
+        c.execute("DELETE FROM users WHERE id=?", (student_id,))
+        conn.commit()
+
+        st.success("✅ Student deleted successfully.")
+        st.rerun()
 # ==========================================================
 # ===================== STUDENT =============================
 # ==========================================================
