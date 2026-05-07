@@ -143,27 +143,24 @@ if pd.read_sql_query("SELECT * FROM users WHERE username='admin'", conn).empty:
 
 # ================= SESSION =================
 
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-# TEMP: Create Lecturer Account
-if st.button("Create Default Lecturer"):
-    hashed_pw = hash_password("admin123")
-    c.execute("INSERT OR REPLACE INTO users(username,password,role) VALUES(?,?,?)",
-              ("admin", hashed_pw, "lecturer"))
-    conn.commit()
-    st.success("Lecturer account created ✅")
-
 # ================= LOGIN =================
 
 if not st.session_state.logged_in:
+
+    # ✅ TEMP: Create Default Lecturer
+    if st.button("Create Default Lecturer"):
+        hashed_pw = hash_password("admin123")
+        c.execute(
+            "INSERT OR REPLACE INTO users(username,password,role) VALUES(?,?,?)",
+            ("admin", hashed_pw, "lecturer")
+        )
+        conn.commit()
+        st.success("Lecturer account created ✅")
 
     st.title("🏗️ Civil Engineering AI Platform")
 
     user = st.text_input("Username")
     pw = st.text_input("Password", type="password")
-
-    if st.button("Login"):
-
         df = pd.read_sql_query("SELECT * FROM users WHERE username=?", conn, params=(user,))
         if not df.empty and check_password(pw, df.iloc[0]["password"]):
             st.session_state.logged_in = True
