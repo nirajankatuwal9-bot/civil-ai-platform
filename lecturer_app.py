@@ -352,7 +352,7 @@ if role == "lecturer":
             df["marks"] = pd.to_numeric(df["marks"], errors="coerce")
             st.bar_chart(df.groupby("title")["marks"].mean())
     # ==========================================================
-    # ===================== MANAGE STUDENTS ====================
+        # ===================== MANAGE STUDENTS ====================
     # ==========================================================
     with tabs[5]:
 
@@ -465,30 +465,32 @@ if role == "lecturer":
         else:
             st.dataframe(
                 students[["semester", "username", "full_name"]],
-                use_container_width=True)
+                use_container_width=True,
                 hide_index=True
             )
+
+        # ✅ DELETE SECTION (ONLY INDENT FIXED)
         if not students.empty:
 
             student_options = {
-            f"{row['semester']} | {row['username']} | {row['full_name']}": row['id']
-            for _, row in students.iterrows()
-        }
+                f"{row['semester']} | {row['username']} | {row['full_name']}": row['id']
+                for _, row in students.iterrows()
+            }
 
-        selected_student = st.selectbox(
-            "Select Student to Delete",
-            list(student_options.keys())
-        )
+            selected_student = st.selectbox(
+                "Select Student to Delete",
+                list(student_options.keys())
+            )
 
-    if st.button("Delete Selected Student"):
+            if st.button("Delete Selected Student"):
 
-        student_id = student_options[selected_student]
+                student_id = student_options[selected_student]
 
-        c.execute("DELETE FROM users WHERE id=?", (student_id,))
-        conn.commit()
+                c.execute("DELETE FROM users WHERE id=?", (student_id,))
+                conn.commit()
 
-        st.success("✅ Student deleted successfully.")
-        st.rerun()
+                st.success("✅ Student deleted successfully.")
+                st.rerun()
 # ==========================================================
 # ===================== STUDENT =============================
 # ==========================================================
