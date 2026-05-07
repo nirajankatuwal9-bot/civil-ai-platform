@@ -693,8 +693,7 @@ elif role == "student":
 
     # SUBMIT
     with tabs[0]:
-        # SUBMIT
-    with tabs[0]:
+     
         # ==========================================
         # 🚨 THE X-RAY DB DUMP - DELETE AFTER WE FIX THIS
         # ==========================================
