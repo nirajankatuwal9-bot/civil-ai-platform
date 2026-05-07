@@ -222,79 +222,79 @@ if role == "lecturer":
 
     # ASSIGNMENTS
     with tabs[2]:
-        st.subheader( "create New Assignment")
-         # ✅ Load semesters
+
+        st.subheader("create New Assignment")
+
         sems = pd.read_sql_query("SELECT * FROM semesters", conn)
 
-    if sems.empty:
-        st.warning("Please create a semester first.")
-        st.stop()
+        if sems.empty:
+            st.warning("Please create a semester first.")
+            st.stop()
 
-    sem_name = st.selectbox("Select Semester", sems["name"], key="assign_sem")
-    sem_id = sems[sems["name"] == sem_name]["id"].values[0]
+        sem_name = st.selectbox("Select Semester", sems["name"], key="assign_sem")
+        sem_id = sems[sems["name"] == sem_name]["id"].values[0]
 
-    # ✅ Load subjects for selected semester
-    subjects = pd.read_sql_query(
-        "SELECT * FROM subjects WHERE semester_id=?",
-        conn,
-        params=(sem_id,)
-    )
+        subjects = pd.read_sql_query(
+            "SELECT * FROM subjects WHERE semester_id=?",
+            conn,
+            params=(sem_id,)
+        )
 
-    if subjects.empty:
-        st.warning("Please create a subject for this semester first.")
-        st.stop()
+        if subjects.empty:
+            st.warning("Please create a subject for this semester first.")
+            st.stop()
 
-    subject_options = {
-    f"{row['name']} (ID:{row['id']})": row['id']
-    for _, row in subjects.iterrows()
-}
+        subject_options = {
+            f"{row['name']} (ID:{row['id']})": row['id']
+            for _, row in subjects.iterrows()
+        }
 
-selected_subject = st.selectbox("Select Subject", list(subject_options.keys()))
-sub_id = subject_options[selected_subject]
-title = st.text_input("Assignment Title")
-deadline = st.date_input("Deadline")
-file = st.file_uploader("Upload Assignment PDF", type=["pdf"])
+        selected_subject = st.selectbox("Select Subject", list(subject_options.keys()))
+        sub_id = subject_options[selected_subject]
 
-    if st.button("Create Assignment"):
+        title = st.text_input("Assignment Title")
+        deadline = st.date_input("Deadline")
+        file = st.file_uploader("Upload Assignment PDF", type=["pdf"])
 
-        if not title.strip():
-            st.error("Title cannot be empty.")
+        if st.button("Create Assignment"):
+
+            if not title.strip():
+                st.error("Title cannot be empty.")
+            else:
+                file_path = ""
+
+                if file:
+                    file_path = f"assignment_files/{datetime.now().timestamp()}_{file.name}"
+                    with open(file_path, "wb") as f:
+                        f.write(file.getbuffer())
+
+                try:
+                    c.execute("""
+                    INSERT INTO assignments(title,subject_id,deadline,question_file)
+                    VALUES(?,?,?,?)
+                    """, (title.strip(), sub_id, str(deadline), file_path))
+
+                    conn.commit()
+                    st.success("✅ Assignment Created Successfully!")
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+        st.divider()
+
+        st.subheader("Existing Assignments")
+
+        all_assignments = pd.read_sql_query("""
+            SELECT id, title, deadline, subject_id
+            FROM assignments
+            ORDER BY id DESC
+        """, conn)
+
+        if all_assignments.empty:
+            st.info("No assignments created yet.")
         else:
-            file_path = ""
-
-            if file:
-                file_path = f"assignment_files/{datetime.now().timestamp()}_{file.name}"
-                with open(file_path, "wb") as f:
-                    f.write(file.getbuffer())
-
-            try:
-                c.execute("""
-                INSERT INTO assignments(title,subject_id,deadline,question_file)
-                VALUES(?,?,?,?)
-                """, (title.strip(), sub_id, str(deadline), file_path))
-
-                conn.commit()
-                st.success("✅ Assignment Created Successfully!")
-                st.rerun()
-
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-    st.divider()
-
-    # ✅ Show existing assignments
-    st.subheader("Existing Assignments")
-
-    all_assignments = pd.read_sql_query("""
-    SELECT id, title, deadline, subject_id
-    FROM assignments
-    ORDER BY id DESC
-""", conn)
-
-    if all_assignments.empty:
-    st.info("No assignments created yet.")
-else:
-    st.dataframe(all_assignments, use_container_width=True)
+            st.dataframe(all_assignments, use_container_width=True)
 
     # SUBMISSIONS & AI
     with tabs[3]:
