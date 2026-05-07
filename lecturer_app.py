@@ -107,17 +107,12 @@ def check_password(p, hashed):
 
 # ================= DEFAULT LECTURER =================
 
-admin_check = pd.read_sql_query(
-    "SELECT * FROM users WHERE username='admin'",
-    conn
-)
-
-if admin_check.empty:
-    c.execute(
-        "INSERT INTO users(username,password,role) VALUES(?,?,?)",
-        ("admin", hash_password("admin123"), "lecturer")
-    )
-    conn.commit()
+# ✅ Thread-safe atomic insertion for multi-user cloud environments
+c.execute("""
+INSERT OR IGNORE INTO users(username, password, role) 
+VALUES(?, ?, ?)
+""", ("admin", hash_password("admin123"), "lecturer"))
+conn.commit()
 
 # ================= SESSION =================
 
