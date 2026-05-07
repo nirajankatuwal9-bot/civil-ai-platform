@@ -210,23 +210,14 @@ if role == "lecturer":
             st.success("Added")
         st.dataframe(pd.read_sql_query("SELECT * FROM semesters", conn))
 
-    # SUBJECTS
-    with tabs[1]:
-        sems = pd.read_sql_query("SELECT * FROM semesters", conn)
-        if not sems.empty:
-            sem = st.selectbox("Semester", sems["name"])
-            sem_id = sems[sems["name"] == sem]["id"].values[0]
+    # ================= DEFAULT LECTURER =================
 
-            sub = st.text_input("Subject Name")
-            if st.button("Add Subject"):
-                c.execute("INSERT INTO subjects(name,semester_id) VALUES(?,?)",
-                          (sub, sem_id))
-                conn.commit()
-                st.success("Added")
-
-            st.dataframe(pd.read_sql_query(
-                "SELECT * FROM subjects WHERE semester_id=?", conn, params=(sem_id,)
-            ))
+# ✅ Thread-safe atomic insertion for multi-user cloud environments
+c.execute("""
+INSERT OR IGNORE INTO users(username, password, role) 
+VALUES(?, ?, ?)
+""", ("admin", hash_password("admin123"), "lecturer"))
+conn.commit()
 
     # ASSIGNMENTS
     with tabs[2]:
