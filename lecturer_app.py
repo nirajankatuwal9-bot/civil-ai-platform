@@ -538,7 +538,7 @@ elif role == "student":
         student_info = pd.read_sql_query(
             "SELECT semester_id FROM users WHERE id=?",
             conn,
-            params=(st.session_state.user_id,)
+            params=(int(st.session_state.user_id),)
         )
 
         if student_info.empty:
