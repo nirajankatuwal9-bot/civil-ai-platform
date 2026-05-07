@@ -219,7 +219,7 @@ VALUES(?, ?, ?)
 """, ("admin", hash_password("admin123"), "lecturer"))
 conn.commit()
  # ASSIGNMENTS
-    with tabs[2]:
+with tabs[2]:
         subjects = pd.read_sql_query("""
         SELECT subjects.id, subjects.name, semesters.name as semester
         FROM subjects
