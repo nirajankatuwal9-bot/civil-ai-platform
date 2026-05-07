@@ -218,8 +218,7 @@ INSERT OR IGNORE INTO users(username, password, role)
 VALUES(?, ?, ?)
 """, ("admin", hash_password("admin123"), "lecturer"))
 conn.commit()
-
-    # ASSIGNMENTS
+ # ASSIGNMENTS
     with tabs[2]:
         subjects = pd.read_sql_query("""
         SELECT subjects.id, subjects.name, semesters.name as semester
@@ -255,6 +254,7 @@ conn.commit()
 
                 conn.commit()
                 st.success("Assignment Created")
+   
 
     # SUBMISSIONS & AI
     with tabs[3]:
