@@ -168,7 +168,6 @@ def check_password(password, stored_value):
     except:
         return False
  # ================= AUTO-CREATE DEFAULT USERS =================
-# Check if the users table is empty
 c.execute("SELECT COUNT(*) FROM users")
 if c.fetchone()[0] == 0:
     # Create default Admin/Lecturer
@@ -176,10 +175,18 @@ if c.fetchone()[0] == 0:
         "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
         ("admin", hash_password("admin123"), "lecturer")
     )
-    # Create default Student
+    
+    # ✅ Create a default semester first
+    c.execute("INSERT INTO semesters (name) VALUES (?)", ("I/I",))
+    conn.commit()
+    
+    # Get the semester ID
+    default_sem_id = c.lastrowid
+    
+    # Create default Student WITH semester
     c.execute(
-        "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
-        ("student", hash_password("student123"), "student")
+        "INSERT INTO users (username, password, role, semester_id) VALUES (?, ?, ?, ?)",
+        ("student", hash_password("student123"), "student", default_sem_id)
     )
     conn.commit()
 # ==============================================================
