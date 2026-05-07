@@ -735,7 +735,6 @@ if role == "lecturer":
             except Exception as e:
                 st.error(f"❌ Error during reset: {e}")
 # ================= STUDENT =================
-
 elif role == "student":
 
     tabs = st.tabs(["📝 Submit Assignment","🧪 Take Exam","📊 My Results"])
