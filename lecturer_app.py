@@ -459,7 +459,7 @@ if role == "lecturer":
         st.subheader("Student List")
 
         students = pd.read_sql_query("""
-        SELECT users.id, users.username, semesters.name as semester
+        SELECT users.id, users.full_name, semesters.name as semester
         FROM users
         JOIN semesters ON users.semester_id = semesters.id
         WHERE users.role='student'
