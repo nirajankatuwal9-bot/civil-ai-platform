@@ -692,97 +692,142 @@ elif role == "student":
     tabs = st.tabs(["📝 Submit Assignment","🧪 Take Exam","📊 My Results"])
 
     # SUBMIT
-    with tabs[0]:
-        st.subheader("📚 My Pending Assignments")
-        
-        # 1. Automatically find this specific student's assigned semester
-        student_data = pd.read_sql_query(
-            "SELECT semester_id FROM users WHERE username=?", 
-            conn, params=(st.session_state.user,)
-        )
-        
-        if not student_data.empty and pd.notna(student_data['semester_id'].iloc[0]):
-            my_sem_id = int(student_data['semester_id'].iloc[0])
-            
-            # 2. Fetch ONLY the subjects for their assigned semester
-            subjects = pd.read_sql_query(
-                "SELECT * FROM subjects WHERE semester_id=?", 
-                conn, params=(my_sem_id,)
-            )
-            
-            if not subjects.empty:
-                sub = st.selectbox("Filter by Subject", subjects["name"])
-                sub_id = subjects[subjects["name"] == sub]["id"].values[0]
+with tabs[0]:
+    st.subheader("📚 My Pending Assignments")
+    
+    # 1. Get student's semester assignment
+    student_data = pd.read_sql_query(
+        "SELECT semester_id FROM users WHERE username=?", 
+        conn, params=(st.session_state.user,)
+    )
+    
+    # ✅ CHECK IF STUDENT HAS A SEMESTER ASSIGNED
+    if student_data.empty or pd.isna(student_data['semester_id'].iloc[0]) or student_data['semester_id'].iloc[0] is None:
+        st.warning("⚠️ You have not been assigned to a semester yet. Please contact your lecturer.")
+        st.stop()
+    
+    my_sem_id = int(student_data['semester_id'].iloc[0])
+    
+    # Show which semester they're in
+    sem_name = pd.read_sql_query("SELECT name FROM semesters WHERE id=?", conn, params=(my_sem_id,))
+    if not sem_name.empty:
+        st.info(f"📘 You are enrolled in: **{sem_name['name'].iloc[0]}**")
+    
+    # 2. Fetch subjects for their semester
+    subjects = pd.read_sql_query(
+        "SELECT * FROM subjects WHERE semester_id=?", 
+        conn, params=(my_sem_id,)
+    )
+    
+    if subjects.empty:
+        st.warning("No subjects found for your semester.")
+        st.stop()
+    
+    sub = st.selectbox("Filter by Subject", subjects["name"], key="student_subject_filter")
+    sub_id = subjects[subjects["name"] == sub]["id"].values[0]
 
-                # 3. Fetch assignments for that subject
-                assigns = pd.read_sql_query(
-                    "SELECT * FROM assignments WHERE subject_id=?", 
-                    conn, params=(int(sub_id),)
+    # 3. Fetch assignments for that subject
+    assigns = pd.read_sql_query(
+        "SELECT * FROM assignments WHERE subject_id=?", 
+        conn, params=(int(sub_id),)
+    )
+    
+    if assigns.empty:
+        st.info(f"🎉 No pending assignments for **{sub}** right now!")
+    else:
+        for _, row in assigns.iterrows():
+            with st.expander(f"📌 {row['title']} (Due: {row['deadline']})"):
+                
+                # ==========================================================
+                # 1. SHOW THE LECTURER'S ASSIGNMENT FILE
+                # ==========================================================
+                if pd.notna(row['question_file']) and str(row['question_file']).strip() != "":
+                    file_path = str(row['question_file']).strip()
+                    
+                    if os.path.exists(file_path):
+                        try:
+                            with open(file_path, "rb") as f:
+                                file_data = f.read()
+                                st.download_button(
+                                    label="📄 Download Assignment File",
+                                    data=file_data,
+                                    file_name=os.path.basename(file_path),
+                                    mime="application/pdf",
+                                    key=f"dl_{row['id']}"
+                                )
+                        except Exception as e:
+                            st.error(f"Error reading file: {e}")
+                    else:
+                        st.warning(f"⚠️ File not found: {file_path}")
+                else:
+                    st.info("ℹ️ No reference file attached by lecturer.")
+                
+                st.divider()
+
+                # ==========================================================
+                # 2. CHECK IF THE STUDENT ALREADY SUBMITTED
+                # ==========================================================
+                prev_sub = pd.read_sql_query(
+                    "SELECT * FROM submissions WHERE assignment_id=? AND student_name=?",
+                    conn, params=(int(row['id']), st.session_state.user)
                 )
                 
-                if not assigns.empty:
-                    for _, row in assigns.iterrows():
-                        # ✅ FIX 1: Changed 'due_date' to 'deadline' to match your database
-                        with st.expander(f"📌 {row['title']} (Due: {row['deadline']})"):
-                            
-                            # ==========================================================
-                            # 1. SHOW THE LECTURER'S ASSIGNMENT FILE
-                            # ==========================================================
-                            # ✅ FIX 2: Your database explicitly calls this 'question_file'
-                            file_col = 'question_file'
-                            
-                            if file_col in row and pd.notna(row[file_col]) and str(row[file_col]).strip() != "":
-                                if os.path.exists(row[file_col]):
-                                    with open(row[file_col], "rb") as f:
-                                        st.download_button(
-                                            label="📄 Download Assignment File",
-                                            data=f,
-                                            file_name=os.path.basename(row[file_col]),
-                                            mime="application/pdf",
-                                            key=f"dl_{row['id']}"
-                                        )
-                                else:
-                                    st.warning("⚠️ The attached file could not be found on the server.")
-                            else:
-                                st.info("No reference file attached by lecturer.")
-                            
-                            st.divider()
-
-                            # ==========================================================
-                            # 2. CHECK IF THE STUDENT ALREADY SUBMITTED
-                            # ==========================================================
-                            prev_sub = pd.read_sql_query(
-                                "SELECT * FROM submissions WHERE assignment_id=? AND student_name=?",
-                                conn, params=(int(row['id']), st.session_state.user)
-                            )
-                            
-                            if not prev_sub.empty:
-                                st.success("✅ You have already submitted this assignment.")
-                                st.write(f"**Submitted at:** {prev_sub['submission_time'].iloc[0]}")
-                            else:
-                                # Show the uploader only if they haven't submitted yet
-                                pdf = st.file_uploader(f"Upload PDF for {row['title']}", type=["pdf"], key=f"up_{row['id']}")
-                                
-                                if st.button("Submit Assignment", key=f"btn_{row['id']}"):
-                                    if pdf:
-                                        if not os.path.exists("submission_files"):
-                                            os.makedirs("submission_files")
-                                            
-                                        path = f"submission_files/{st.session_state.user}_{pdf.name}"
-                                        with open(path, "wb") as f:
-                                            f.write(pdf.getbuffer())
-                                            
-                                        c.execute("""
-                                        INSERT INTO submissions(assignment_id, student_name, submission_time, submission_file, marks) 
-                                        VALUES(?,?,?,?,?)
-                                        """, (int(row['id']), st.session_state.user, str(datetime.now()), path, ""))
-                                        conn.commit()
-                                        st.success(f"Submitted '{row['title']}' Successfully! ✅")
-                                        st.rerun() # Refresh the page instantly to hide the upload box!
-                                    else:
-                                        st.warning("Please upload a PDF first.")
+                if not prev_sub.empty:
+                    st.success("✅ You have already submitted this assignment.")
+                    st.write(f"**Submitted at:** {prev_sub['submission_time'].iloc[0]}")
+                    
+                    # Show their submission file
+                    if pd.notna(prev_sub['submission_file'].iloc[0]):
+                        sub_file = prev_sub['submission_file'].iloc[0]
+                        if os.path.exists(sub_file):
+                            with open(sub_file, "rb") as f:
+                                st.download_button(
+                                    label="📥 Download My Submission",
+                                    data=f,
+                                    file_name=os.path.basename(sub_file),
+                                    mime="application/pdf",
+                                    key=f"my_sub_{row['id']}"
+                                )
+                    
+                    # Show marks if graded
+                    if prev_sub['marks'].iloc[0]:
+                        st.metric("Your Marks", prev_sub['marks'].iloc[0])
                 else:
-                    st.info(f"🎉 No pending assignments for {sub} right now!")
+                    # Show upload form
+                    pdf = st.file_uploader(
+                        f"Upload PDF for {row['title']}", 
+                        type=["pdf"], 
+                        key=f"up_{row['id']}"
+                    )
+                    
+                    if st.button("Submit Assignment", key=f"btn_{row['id']}"):
+                        if pdf:
+                            if not os.path.exists("submission_files"):
+                                os.makedirs("submission_files")
+                                
+                            path = f"submission_files/{st.session_state.user}_{pdf.name}"
+                            
+                            try:
+                                with open(path, "wb") as f:
+                                    f.write(pdf.getbuffer())
+                                    
+                                c.execute("""
+                                INSERT INTO submissions(assignment_id, student_name, submission_time, submission_file, marks) 
+                                VALUES(?,?,?,?,?)
+                                """, (
+                                    int(row['id']), 
+                                    st.session_state.user, 
+                                    str(datetime.now()), 
+                                    path, 
+                                    ""
+                                ))
+                                conn.commit()
+                                st.success(f"✅ Submitted '{row['title']}' Successfully!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Submission failed: {e}")
+                        else:
+                            st.warning("⚠️ Please upload a PDF file first.")
 
     # EXAM
     with tabs[1]:
