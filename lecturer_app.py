@@ -33,28 +33,6 @@ os.makedirs("submission_files", exist_ok=True)
 DB_PATH = "data/lecturer.db"
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 c = conn.cursor()
-# ✅ Cached loader functions (for performance)
-
-
-def load_semesters():
-    return pd.read_sql_query("SELECT * FROM semesters", conn)
-
-
-def load_subjects():
-    return pd.read_sql_query("SELECT * FROM subjects", conn)
-
-
-def load_assignments():
-    return pd.read_sql_query("SELECT * FROM assignments", conn)
-
-def load_subjects_by_semester(semester_id):
-    return pd.read_sql_query(
-        "SELECT * FROM subjects WHERE semester_id=?", 
-        conn, 
-        params=(semester_id,)
-    )
-
-# ================= DATABASE TABLES =================
 
 # ================= DATABASE TABLES =================
 
