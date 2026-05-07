@@ -32,7 +32,13 @@ os.makedirs("submission_files", exist_ok=True)
 
 conn = sqlite3.connect("data/lecturer.db", check_same_thread=False)
 c = conn.cursor()
+# ✅ CLOUD SAFE MIGRATION FOR full_name COLUMN
 
+columns = pd.read_sql_query("PRAGMA table_info(users);", conn)
+
+if "full_name" not in columns["name"].values:
+    c.execute("ALTER TABLE users ADD COLUMN full_name TEXT")
+    conn.commit()
 # USERS TABLE
 c.execute("""
 CREATE TABLE IF NOT EXISTS users(
