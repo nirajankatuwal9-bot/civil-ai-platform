@@ -200,16 +200,6 @@ with col2:
     ### Himalaya College of Engineering
     """)
 
-st.divider()
-
-# --- TEMPORARY DEV TOOL: Delete this after you fix the database! ---
-if st.sidebar.button("⚠️ Hard Reset Database"):
-    if os.path.exists("data/lecturer.db"):
-        os.remove("data/lecturer.db")
-        st.sidebar.success("Database deleted! Refresh the page now.")
-    else:
-        st.sidebar.info("Database doesn't exist yet.")
-# -------------------------------------------------------------------
 
 # ================= SESSION =================
 
