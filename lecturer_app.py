@@ -205,7 +205,8 @@ def extract_marks(text):
 # ==========================================================
 # ===================== LECTURER ============================
 # ==========================================================
-
+debug_users = pd.read_sql_query("SELECT id, username, role, semester_id FROM users", conn)
+st.write(debug_users)
 if role == "lecturer":
 
     tabs = st.tabs([
