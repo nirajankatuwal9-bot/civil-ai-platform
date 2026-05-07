@@ -145,6 +145,13 @@ if pd.read_sql_query("SELECT * FROM users WHERE username='admin'", conn).empty:
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
+# TEMP: Create Lecturer Account
+if st.button("Create Default Lecturer"):
+    hashed_pw = hash_password("admin123")
+    c.execute("INSERT OR REPLACE INTO users(username,password,role) VALUES(?,?,?)",
+              ("admin", hashed_pw, "lecturer"))
+    conn.commit()
+    st.success("Lecturer account created ✅")
 
 # ================= LOGIN =================
 
