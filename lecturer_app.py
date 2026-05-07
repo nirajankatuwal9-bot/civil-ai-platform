@@ -693,22 +693,34 @@ elif role == "student":
 
     # SUBMIT
     with tabs[0]:
-        sems = pd.read_sql_query("SELECT * FROM semesters", conn)
-        if not sems.empty:
-            sem = st.selectbox("Semester", sems["name"])
-            sem_id = sems[sems["name"] == sem]["id"].values[0]
-
-            subjects = pd.read_sql_query("SELECT * FROM subjects WHERE semester_id=?", conn, params=(int(sem_id),))
+        st.subheader("📚 My Pending Assignments")
+        
+        # 1. Automatically find this specific student's assigned semester
+        student_data = pd.read_sql_query(
+            "SELECT semester_id FROM users WHERE username=?", 
+            conn, params=(st.session_state.user,)
+        )
+        
+        if not student_data.empty and pd.notna(student_data['semester_id'].iloc[0]):
+            my_sem_id = int(student_data['semester_id'].iloc[0])
+            
+            # 2. Fetch ONLY the subjects for their assigned semester
+            subjects = pd.read_sql_query(
+                "SELECT * FROM subjects WHERE semester_id=?", 
+                conn, params=(my_sem_id,)
+            )
+            
             if not subjects.empty:
-                sub = st.selectbox("Subject", subjects["name"])
+                sub = st.selectbox("Filter by Subject", subjects["name"])
                 sub_id = subjects[subjects["name"] == sub]["id"].values[0]
 
-                assigns = pd.read_sql_query("SELECT * FROM assignments WHERE subject_id=?", conn, params=(int(sub_id),))
+                # 3. Fetch assignments for that subject
+                assigns = pd.read_sql_query(
+                    "SELECT * FROM assignments WHERE subject_id=?", 
+                    conn, params=(int(sub_id),)
+                )
                 
                 if not assigns.empty:
-                    st.subheader(f"📚 Pending Assignments for {sub}")
-                    
-                    # ✅ THIS IS THE NEW ASSIGNMENT CARD LAYOUT
                     for _, row in assigns.iterrows():
                         with st.expander(f"📌 {row['title']} (Due: {row['due_date']})"):
                             st.markdown("**Instructions:**")
@@ -719,7 +731,6 @@ elif role == "student":
                             
                             if st.button("Submit", key=f"btn_{row['id']}"):
                                 if pdf:
-                                    # Ensure the folder exists so it doesn't crash
                                     if not os.path.exists("submission_files"):
                                         os.makedirs("submission_files")
                                         
@@ -736,11 +747,11 @@ elif role == "student":
                                 else:
                                     st.warning("Please upload a PDF first.")
                 else:
-                    st.info(f"No assignments posted yet for {sub}.")
+                    st.info(f"🎉 No pending assignments for {sub} right now!")
             else:
-                st.info("No subjects found for this semester.")
+                st.warning("No subjects have been assigned to your semester yet.")
         else:
-            st.info("No semesters available.")
+            st.error("Error: Your account is not properly assigned to a semester. Please contact the Lecturer.")
 
     # EXAM
     with tabs[1]:
