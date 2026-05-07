@@ -332,7 +332,116 @@ if role == "lecturer":
         if not df.empty:
             df["marks"] = pd.to_numeric(df["marks"], errors="coerce")
             st.bar_chart(df.groupby("title")["marks"].mean())
+    # ==========================================================
+    # ===================== MANAGE STUDENTS ====================
+    # ==========================================================
+    with tabs[5]:
 
+        st.subheader("Add Student Manually")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            student_name = st.text_input("Full Name")
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+
+        with col2:
+            sems = pd.read_sql_query("SELECT * FROM semesters", conn)
+
+            if sems.empty:
+                st.warning("Please create semesters first.")
+                st.stop()
+
+            semester_name = st.selectbox("Assign Semester", sems["name"])
+            semester_id = sems[sems["name"] == semester_name]["id"].values[0]
+
+        if st.button("Create Student"):
+
+            if not username or not password:
+                st.error("Username and password required.")
+            else:
+                try:
+                    c.execute("""
+                    INSERT INTO users(username, password, role, semester_id)
+                    VALUES(?,?,?,?)
+                    """, (
+                        username,
+                        hash_password(password),
+                        "student",
+                        semester_id
+                    ))
+                    conn.commit()
+                    st.success("✅ Student created successfully.")
+                except sqlite3.IntegrityError:
+                    st.error("Username already exists.")
+
+        st.divider()
+
+        # ================= CSV UPLOAD =================
+        st.subheader("Bulk Upload Students via CSV")
+
+        st.info("CSV format: name,username,password,semester")
+
+        csv_file = st.file_uploader("Upload CSV", type=["csv"])
+
+        if csv_file:
+
+            df_csv = pd.read_csv(csv_file)
+
+            required_cols = {"name", "username", "password", "semester"}
+
+            if not required_cols.issubset(df_csv.columns):
+                st.error("CSV must contain columns: name, username, password, semester")
+            else:
+                if st.button("Upload Students"):
+
+                    success_count = 0
+
+                    for _, row in df_csv.iterrows():
+
+                        sem_match = sems[sems["name"] == row["semester"]]
+
+                        if sem_match.empty:
+                            continue
+
+                        sem_id = sem_match["id"].values[0]
+
+                        try:
+                            c.execute("""
+                            INSERT INTO users(username, password, role, semester_id)
+                            VALUES(?,?,?,?)
+                            """, (
+                                row["username"],
+                                hash_password(str(row["password"])),
+                                "student",
+                                sem_id
+                            ))
+                            success_count += 1
+
+                        except:
+                            continue
+
+                    conn.commit()
+                    st.success(f"✅ {success_count} students uploaded successfully.")
+
+        st.divider()
+
+        # ================= VIEW STUDENTS =================
+        st.subheader("Student List")
+
+        students = pd.read_sql_query("""
+        SELECT users.username, semesters.name as semester
+        FROM users
+        JOIN semesters ON users.semester_id = semesters.id
+        WHERE users.role='student'
+        ORDER BY semesters.name
+        """, conn)
+
+        if students.empty:
+            st.info("No students added yet.")
+        else:
+            st.dataframe(students, use_container_width=True)
 # ==========================================================
 # ===================== STUDENT =============================
 # ==========================================================
