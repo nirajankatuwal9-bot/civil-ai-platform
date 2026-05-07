@@ -32,7 +32,17 @@ os.makedirs("submission_files", exist_ok=True)
 
 conn = sqlite3.connect("data/lecturer.db", check_same_thread=False)
 c = conn.cursor()
+# ✅ FORCE DATABASE RESET (Cloud Fix)
+def reset_database():
+    c.execute("DROP TABLE IF EXISTS users")
+    c.execute("DROP TABLE IF EXISTS semesters")
+    c.execute("DROP TABLE IF EXISTS subjects")
+    c.execute("DROP TABLE IF EXISTS assignments")
+    c.execute("DROP TABLE IF EXISTS submissions")
+    conn.commit()
 
+# 🔥 TEMPORARY RESET (Run once then remove)
+reset_database()
 # USERS
 c.execute("""
 CREATE TABLE IF NOT EXISTS users(
