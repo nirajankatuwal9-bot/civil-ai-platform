@@ -4,7 +4,6 @@ import sqlite3
 from datetime import datetime
 import os
 import re
-from difflib import SequenceMatcher
 from google import genai
 from pdf2image import convert_from_path
 import io
@@ -30,10 +29,11 @@ os.makedirs("submission_files", exist_ok=True)
 
 # ================= DATABASE =================
 
-conn = sqlite3.connect("data/lecturer.db", check_same_thread=False)
+DB_PATH = "data/lecturer.db"
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 c = conn.cursor()
 
-# USERS TABLE
+# USERS
 c.execute("""
 CREATE TABLE IF NOT EXISTS users(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,8 +44,6 @@ CREATE TABLE IF NOT EXISTS users(
     semester_id INTEGER
 )
 """)
-conn.commit()
-
 
 # SEMESTERS
 c.execute("""
@@ -96,20 +94,38 @@ def hash_password(p):
     return bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
 
 def check_password(p, hashed):
-    return bcrypt.checkpw(p.encode(), hashed.encode())
+    try:
+        return bcrypt.checkpw(p.encode(), hashed.encode())
+    except:
+        return False
 
 # ================= DEFAULT LECTURER =================
 
-c.execute("""
-INSERT OR IGNORE INTO users(full_name,username, password, role, semester_id) 
-VALUES(?,?,?, ?, ?)
-""", ("Admistrator", "admin", hash_password("admin123"), "lecturer",None))
-conn.commit()
+admin_exists = pd.read_sql_query(
+    "SELECT * FROM users WHERE username='admin'",
+    conn
+)
+
+if admin_exists.empty:
+    c.execute("""
+    INSERT INTO users(full_name, username, password, role, semester_id)
+    VALUES(?,?,?,?,?)
+    """, (
+        "Administrator",
+        "admin",
+        hash_password("admin123"),
+        "lecturer",
+        None
+    ))
+    conn.commit()
 
 # ================= SESSION =================
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
+    st.session_state.user_id = None
+    st.session_state.role = None
+    st.session_state.username = None
 
 # ================= LOGIN =================
 
@@ -142,6 +158,7 @@ if not st.session_state.logged_in:
 # ================= LOGOUT =================
 
 st.sidebar.write(f"👤 {st.session_state.username} ({st.session_state.role})")
+
 if st.sidebar.button("Logout"):
     st.session_state.clear()
     st.rerun()
@@ -192,52 +209,68 @@ def extract_marks(text):
 if role == "lecturer":
 
     tabs = st.tabs([
-    "Semesters",
-    "Subjects",
-    "Assignments",
-    "Submissions & AI",
-    "Analytics",
-    "Manage Students"
-])
+        "Semesters",
+        "Subjects",
+        "Assignments",
+        "Submissions & AI",
+        "Analytics",
+        "Manage Students"
+    ])
 
     # SEMESTERS
     with tabs[0]:
         name = st.text_input("New Semester")
-        if st.button("Add Semester"):
 
+        if st.button("Add Semester"):
             if not name.strip():
                 st.error("Semester name cannot be empty.")
             else:
                 try:
-                    c.execute("INSERT INTO semesters(name) Values(?)", (name.strip(),))
+                    c.execute("INSERT INTO semesters(name) VALUES(?)", (name.strip(),))
                     conn.commit()
                     st.success("✅ Semester Added")
                     st.rerun()
                 except sqlite3.IntegrityError:
-                    st.warning("⚠️Semester already exists.")
-                    
-            
+                    st.warning("⚠️ Semester already exists.")
+
+        st.dataframe(
+            pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn),
+            use_container_width=True,
+            hide_index=True
+        )
 
     # SUBJECTS
     with tabs[1]:
-        sems = pd.read_sql_query("SELECT * FROM semesters", conn)
+        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
 
-        if not sems.empty:
+        if sems.empty:
+            st.warning("Please create a semester first.")
+        else:
             sem = st.selectbox("Semester", sems["name"])
             sem_id = sems[sems["name"] == sem]["id"].values[0]
 
             sub = st.text_input("Subject Name")
             if st.button("Add Subject"):
-                c.execute("INSERT INTO subjects(name,semester_id) VALUES(?,?)",
-                          (sub, sem_id))
-                conn.commit()
-                st.success("Added")
+                if not sub.strip():
+                    st.error("Subject name cannot be empty.")
+                else:
+                    c.execute(
+                        "INSERT INTO subjects(name,semester_id) VALUES(?,?)",
+                        (sub.strip(), sem_id)
+                    )
+                    conn.commit()
+                    st.success("Added")
+                    st.rerun()
 
-            st.dataframe(pd.read_sql_query(
-                "SELECT * FROM subjects WHERE semester_id=?",
-                conn,
-                params=(sem_id,)
-            ))
+            st.dataframe(
+                pd.read_sql_query(
+                    "SELECT * FROM subjects WHERE semester_id=?",
+                    conn,
+                    params=(sem_id,)
+                ),
+                use_container_width=True,
+                hide_index=True
+            )
 
     # ASSIGNMENTS
     with tabs[2]:
@@ -248,60 +281,57 @@ if role == "lecturer":
 
         if sems.empty:
             st.warning("Please create a semester first.")
-            st.stop()
+        else:
+            sem_name = st.selectbox("Select Semester", sems["name"], key="assign_sem")
+            sem_id = sems[sems["name"] == sem_name]["id"].values[0]
 
-        sem_name = st.selectbox("Select Semester", sems["name"], key="assign_sem")
-        sem_id = sems[sems["name"] == sem_name]["id"].values[0]
+            subjects = pd.read_sql_query(
+                "SELECT * FROM subjects WHERE semester_id=?",
+                conn,
+                params=(sem_id,)
+            )
 
-        subjects = pd.read_sql_query(
-            "SELECT * FROM subjects WHERE semester_id=?",
-            conn,
-            params=(sem_id,)
-        )
-
-        if subjects.empty:
-            st.warning("Please create a subject for this semester first.")
-            st.stop()
-
-        subject_options = {
-            f"{row['name']} (ID:{row['id']})": row['id']
-            for _, row in subjects.iterrows()
-        }
-
-        selected_subject = st.selectbox("Select Subject", list(subject_options.keys()))
-        sub_id = subject_options[selected_subject]
-
-        title = st.text_input("Assignment Title")
-        deadline = st.date_input("Deadline")
-        file = st.file_uploader("Upload Assignment PDF", type=["pdf"])
-
-        if st.button("Create Assignment"):
-
-            if not title.strip():
-                st.error("Title cannot be empty.")
+            if subjects.empty:
+                st.warning("Please create a subject for this semester first.")
             else:
-                file_path = ""
+                subject_options = {
+                    f"{row['name']} (ID:{row['id']})": row['id']
+                    for _, row in subjects.iterrows()
+                }
 
-                if file:
-                    file_path = f"assignment_files/{datetime.now().timestamp()}_{file.name}"
-                    with open(file_path, "wb") as f:
-                        f.write(file.getbuffer())
+                selected_subject = st.selectbox("Select Subject", list(subject_options.keys()))
+                sub_id = subject_options[selected_subject]
 
-                try:
-                    c.execute("""
-                    INSERT INTO assignments(title,subject_id,deadline,question_file)
-                    VALUES(?,?,?,?)
-                    """, (title.strip(), sub_id, str(deadline), file_path))
+                title = st.text_input("Assignment Title")
+                deadline = st.date_input("Deadline")
+                file = st.file_uploader("Upload Assignment PDF", type=["pdf"])
 
-                    conn.commit()
-                    st.success("✅ Assignment Created Successfully!")
-                    st.rerun()
+                if st.button("Create Assignment"):
 
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                    if not title.strip():
+                        st.error("Title cannot be empty.")
+                    else:
+                        file_path = ""
+
+                        if file:
+                            file_path = f"assignment_files/{datetime.now().timestamp()}_{file.name}"
+                            with open(file_path, "wb") as f:
+                                f.write(file.getbuffer())
+
+                        try:
+                            c.execute("""
+                            INSERT INTO assignments(title,subject_id,deadline,question_file)
+                            VALUES(?,?,?,?)
+                            """, (title.strip(), sub_id, str(deadline), file_path))
+
+                            conn.commit()
+                            st.success("✅ Assignment Created Successfully!")
+                            st.rerun()
+
+                        except Exception as e:
+                            st.error(f"Error: {e}")
 
         st.divider()
-
         st.subheader("Existing Assignments")
 
         all_assignments = pd.read_sql_query("""
@@ -313,7 +343,7 @@ if role == "lecturer":
         if all_assignments.empty:
             st.info("No assignments created yet.")
         else:
-            st.dataframe(all_assignments, use_container_width=True)
+            st.dataframe(all_assignments, use_container_width=True, hide_index=True)
 
     # SUBMISSIONS & AI
     with tabs[3]:
@@ -325,20 +355,23 @@ if role == "lecturer":
         JOIN assignments ON submissions.assignment_id = assignments.id
         """, conn)
 
-        st.dataframe(df)
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
         rubric = st.text_area("Rubric for AI grading")
 
         for _, row in df.iterrows():
             if row["submission_file"] and os.path.exists(row["submission_file"]):
-                if st.button(f"AI Grade {row['username']}", key=row["id"]):
+                if st.button(f"AI Grade {row['username']}", key=f"grade_{row['id']}"):
                     result = vision_grade(row["submission_file"], rubric)
                     st.write(result)
                     marks = extract_marks(result)
-                    if marks:
-                        c.execute("UPDATE submissions SET marks=? WHERE id=?",
-                                  (marks, row["id"]))
+                    if marks is not None:
+                        c.execute(
+                            "UPDATE submissions SET marks=? WHERE id=?",
+                            (marks, row["id"])
+                        )
                         conn.commit()
+                        st.success(f"Updated marks for {row['username']}")
 
     # ANALYTICS
     with tabs[4]:
@@ -351,9 +384,10 @@ if role == "lecturer":
         if not df.empty:
             df["marks"] = pd.to_numeric(df["marks"], errors="coerce")
             st.bar_chart(df.groupby("title")["marks"].mean())
-    # ==========================================================
-        # ===================== MANAGE STUDENTS ====================
-    # ==========================================================
+        else:
+            st.info("No graded submissions yet.")
+
+    # MANAGE STUDENTS
     with tabs[5]:
 
         st.subheader("Add Student Manually")
@@ -361,66 +395,60 @@ if role == "lecturer":
         col1, col2 = st.columns(2)
 
         with col1:
-            student_name = st.text_input("Full Name")
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
+            student_name = st.text_input("Full Name", key="student_name")
+            username = st.text_input("Username", key="student_username")
+            password = st.text_input("Password", type="password", key="student_password")
 
         with col2:
-            sems = pd.read_sql_query("SELECT * FROM semesters", conn)
+            sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
 
             if sems.empty:
                 st.warning("Please create semesters first.")
-                st.stop()
-
-            semester_name = st.selectbox("Assign Semester", sems["name"])
-            semester_id = sems[sems["name"] == semester_name]["id"].values[0]
-
-        if st.button("Create Student"):
-
-            if not username or not password:
-                st.error("Username and password required.")
             else:
-                try:
-                    c.execute("""
-                    INSERT INTO users(full_name, username, password, role, semester_id)
-                    VALUES(?,?,?,?,?)
-                    """, (
-                        student_name.strip(),
-                        username.strip(),
-                        hash_password(password.strip()),
-                        "student",
-                        int(semester_id)
-                    ))
-                    conn.commit()
-                    st.success("✅ Student created successfully.")
-                    st.rerun()
-                except sqlite3.IntegrityError:
-                    st.error("Username already exists.")
+                semester_name = st.selectbox("Assign Semester", sems["name"], key="student_semester")
+                semester_id = sems[sems["name"] == semester_name]["id"].values[0]
+
+                if st.button("Create Student"):
+
+                    if not username or not password:
+                        st.error("Username and password required.")
+                    else:
+                        try:
+                            c.execute("""
+                            INSERT INTO users(full_name, username, password, role, semester_id)
+                            VALUES(?,?,?,?,?)
+                            """, (
+                                student_name.strip(),
+                                username.strip(),
+                                hash_password(password.strip()),
+                                "student",
+                                int(semester_id)
+                            ))
+                            conn.commit()
+                            st.success("✅ Student created successfully.")
+                            st.rerun()
+                        except sqlite3.IntegrityError:
+                            st.error("Username already exists.")
 
         st.divider()
 
-        # ================= CSV UPLOAD =================
         st.subheader("Bulk Upload Students via CSV")
-
         st.info("CSV format: name,username,password,semester")
 
-        csv_file = st.file_uploader("Upload CSV", type=["csv"])
+        csv_file = st.file_uploader("Upload CSV", type=["csv"], key="student_csv")
 
         if csv_file:
-
             df_csv = pd.read_csv(csv_file)
-
             required_cols = {"name", "username", "password", "semester"}
 
             if not required_cols.issubset(df_csv.columns):
                 st.error("CSV must contain columns: name, username, password, semester")
             else:
                 if st.button("Upload Students"):
-
+                    sems = pd.read_sql_query("SELECT * FROM semesters", conn)
                     success_count = 0
 
                     for _, row in df_csv.iterrows():
-
                         sem_match = sems[sems["name"] == row["semester"]]
 
                         if sem_match.empty:
@@ -440,16 +468,15 @@ if role == "lecturer":
                                 sem_id
                             ))
                             success_count += 1
-
                         except:
                             continue
 
                     conn.commit()
                     st.success(f"✅ {success_count} students uploaded successfully.")
+                    st.rerun()
 
         st.divider()
 
-        # ================= VIEW STUDENTS =================
         st.subheader("Student List")
 
         students = pd.read_sql_query("""
@@ -469,9 +496,6 @@ if role == "lecturer":
                 hide_index=True
             )
 
-        # ✅ DELETE SECTION (ONLY INDENT FIXED)
-        if not students.empty:
-
             student_options = {
                 f"{row['semester']} | {row['username']} | {row['full_name']}": row['id']
                 for _, row in students.iterrows()
@@ -479,18 +503,17 @@ if role == "lecturer":
 
             selected_student = st.selectbox(
                 "Select Student to Delete",
-                list(student_options.keys())
+                list(student_options.keys()),
+                key="delete_student_select"
             )
 
             if st.button("Delete Selected Student"):
-
                 student_id = student_options[selected_student]
-
                 c.execute("DELETE FROM users WHERE id=?", (student_id,))
                 conn.commit()
-
                 st.success("✅ Student deleted successfully.")
                 st.rerun()
+
 # ==========================================================
 # ===================== STUDENT =============================
 # ==========================================================
@@ -507,7 +530,7 @@ elif role == "student":
             params=(st.session_state.user_id,)
         )
 
-        if student.empty or student.iloc[0]["semester_id"] is None:
+        if student.empty or pd.isna(student.iloc[0]["semester_id"]):
             st.warning("You are not assigned to a semester.")
             st.stop()
 
@@ -520,34 +543,55 @@ elif role == "student":
         WHERE subjects.semester_id=?
         """, conn, params=(sem_id,))
 
-        for _, row in assignments.iterrows():
-            with st.expander(row["title"]):
+        if assignments.empty:
+            st.info("No assignments available.")
+        else:
+            for _, row in assignments.iterrows():
+                with st.expander(row["title"]):
 
-                if row["question_file"] and os.path.exists(row["question_file"]):
-                    with open(row["question_file"], "rb") as f:
-                        st.download_button(
-                            "Download Assignment",
-                            f,
-                            file_name=os.path.basename(row["question_file"])
-                        )
+                    if row["question_file"] and os.path.exists(row["question_file"]):
+                        with open(row["question_file"], "rb") as f:
+                            st.download_button(
+                                "Download Assignment",
+                                f,
+                                file_name=os.path.basename(row["question_file"]),
+                                key=f"download_{row['id']}"
+                            )
 
-                uploaded = st.file_uploader("Upload Your PDF", type=["pdf"], key=row["id"])
+                    uploaded = st.file_uploader("Upload Your PDF", type=["pdf"], key=f"upload_{row['id']}")
 
-                if st.button("Submit", key=f"submit{row['id']}"):
-                    if uploaded:
-                        path = f"submission_files/{st.session_state.username}_{uploaded.name}"
-                        with open(path, "wb") as f:
-                            f.write(uploaded.getbuffer())
+                    existing = pd.read_sql_query(
+                        "SELECT * FROM submissions WHERE assignment_id=? AND student_id=?",
+                        conn,
+                        params=(row["id"], st.session_state.user_id)
+                    )
 
-                        c.execute("""
-                        INSERT INTO submissions(assignment_id,student_id,
-                        submission_time,submission_file,marks)
-                        VALUES(?,?,?,?,?)
-                        """, (row["id"], st.session_state.user_id,
-                              str(datetime.now()), path, ""))
+                    if existing.empty:
+                        if st.button("Submit", key=f"submit_{row['id']}"):
+                            if uploaded:
+                                path = f"submission_files/{st.session_state.username}_{uploaded.name}"
+                                with open(path, "wb") as f:
+                                    f.write(uploaded.getbuffer())
 
-                        conn.commit()
-                        st.success("Submitted")
+                                c.execute("""
+                                INSERT INTO submissions(assignment_id,student_id,
+                                submission_time,submission_file,marks)
+                                VALUES(?,?,?,?,?)
+                                """, (
+                                    row["id"],
+                                    st.session_state.user_id,
+                                    str(datetime.now()),
+                                    path,
+                                    ""
+                                ))
+
+                                conn.commit()
+                                st.success("Submitted")
+                                st.rerun()
+                            else:
+                                st.warning("Please upload a PDF before submitting.")
+                    else:
+                        st.success("You have already submitted this assignment.")
 
     with tabs[1]:
         results = pd.read_sql_query("""
@@ -557,4 +601,7 @@ elif role == "student":
         WHERE submissions.student_id=?
         """, conn, params=(st.session_state.user_id,))
 
-        st.dataframe(results)
+        if results.empty:
+            st.info("No results yet.")
+        else:
+            st.dataframe(results, use_container_width=True, hide_index=True)
