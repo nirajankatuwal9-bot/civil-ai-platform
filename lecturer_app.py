@@ -32,6 +32,7 @@ os.makedirs("submission_files", exist_ok=True)
 
 conn = sqlite3.connect("data/lecturer.db", check_same_thread=False)
 c = conn.cursor()
+
 # ✅ FORCE DATABASE RESET (Cloud Fix)
 def reset_database():
     c.execute("DROP TABLE IF EXISTS users")
@@ -43,6 +44,7 @@ def reset_database():
 
 # 🔥 TEMPORARY RESET (Run once then remove)
 reset_database()
+
 # USERS
 c.execute("""
 CREATE TABLE IF NOT EXISTS users(
@@ -107,7 +109,6 @@ def check_password(p, hashed):
 
 # ================= DEFAULT LECTURER =================
 
-# ✅ Thread-safe atomic insertion for multi-user cloud environments
 c.execute("""
 INSERT OR IGNORE INTO users(username, password, role) 
 VALUES(?, ?, ?)
@@ -210,16 +211,29 @@ if role == "lecturer":
             st.success("Added")
         st.dataframe(pd.read_sql_query("SELECT * FROM semesters", conn))
 
-    # ================= DEFAULT LECTURER =================
+    # SUBJECTS
+    with tabs[1]:
+        sems = pd.read_sql_query("SELECT * FROM semesters", conn)
 
-# ✅ Thread-safe atomic insertion for multi-user cloud environments
-c.execute("""
-INSERT OR IGNORE INTO users(username, password, role) 
-VALUES(?, ?, ?)
-""", ("admin", hash_password("admin123"), "lecturer"))
-conn.commit()
- # ASSIGNMENTS
-with tabs[2]:
+        if not sems.empty:
+            sem = st.selectbox("Semester", sems["name"])
+            sem_id = sems[sems["name"] == sem]["id"].values[0]
+
+            sub = st.text_input("Subject Name")
+            if st.button("Add Subject"):
+                c.execute("INSERT INTO subjects(name,semester_id) VALUES(?,?)",
+                          (sub, sem_id))
+                conn.commit()
+                st.success("Added")
+
+            st.dataframe(pd.read_sql_query(
+                "SELECT * FROM subjects WHERE semester_id=?",
+                conn,
+                params=(sem_id,)
+            ))
+
+    # ASSIGNMENTS
+    with tabs[2]:
         subjects = pd.read_sql_query("""
         SELECT subjects.id, subjects.name, semesters.name as semester
         FROM subjects
@@ -254,10 +268,9 @@ with tabs[2]:
 
                 conn.commit()
                 st.success("Assignment Created")
-   
 
-  # SUBMISSIONS & AI
-with tabs[3]:
+    # SUBMISSIONS & AI
+    with tabs[3]:
         df = pd.read_sql_query("""
         SELECT submissions.id, users.username, assignments.title,
                submissions.submission_file, submissions.marks
@@ -282,7 +295,7 @@ with tabs[3]:
                         conn.commit()
 
     # ANALYTICS
-with tabs[4]:
+    with tabs[4]:
         df = pd.read_sql_query("""
         SELECT assignments.title, submissions.marks
         FROM submissions
@@ -291,7 +304,7 @@ with tabs[4]:
 
         if not df.empty:
             df["marks"] = pd.to_numeric(df["marks"], errors="coerce")
-            st.bar_chart(df.groupby("title")["marks"].mean())  
+            st.bar_chart(df.groupby("title")["marks"].mean())
 
 # ==========================================================
 # ===================== STUDENT =============================
@@ -301,12 +314,12 @@ elif role == "student":
 
     tabs = st.tabs(["Assignments", "My Results"])
 
-    # ASSIGNMENTS
     with tabs[0]:
 
         student = pd.read_sql_query(
             "SELECT semester_id FROM users WHERE id=?",
-            conn, params=(st.session_state.user_id,)
+            conn,
+            params=(st.session_state.user_id,)
         )
 
         if student.empty or student.iloc[0]["semester_id"] is None:
@@ -351,7 +364,6 @@ elif role == "student":
                         conn.commit()
                         st.success("Submitted")
 
-    # RESULTS
     with tabs[1]:
         results = pd.read_sql_query("""
         SELECT assignments.title, submissions.marks
