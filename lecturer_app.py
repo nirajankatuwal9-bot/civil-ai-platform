@@ -244,8 +244,13 @@ if role == "lecturer":
         st.warning("Please create a subject for this semester first.")
         st.stop()
 
-    sub_name = st.selectbox("Select Subject", subjects["name"], key="assign_sub")
-    sub_id = subjects[subjects["name"] == sub_name]["id"].values[0]
+    subject_options = {
+    f"{row['name']} (ID:{row['id']})": row['id']
+    for _, row in subjects.iterrows()
+}
+
+selected_subject = st.selectbox("Select Subject", list(subject_options.keys()))
+sub_id = subject_options[selected_subject]
 
     title = st.text_input("Assignment Title")
     deadline = st.date_input("Deadline")
@@ -282,19 +287,15 @@ if role == "lecturer":
     st.subheader("Existing Assignments")
 
     all_assignments = pd.read_sql_query("""
-        SELECT assignments.title, assignments.deadline,
-               subjects.name as subject,
-               semesters.name as semester
-        FROM assignments
-        JOIN subjects ON assignments.subject_id = subjects.id
-        JOIN semesters ON subjects.semester_id = semesters.id
-        ORDER BY assignments.id DESC
-    """, conn)
+    SELECT id, title, deadline, subject_id
+    FROM assignments
+    ORDER BY id DESC
+""", conn)
 
     if all_assignments.empty:
-        st.info("No assignments created yet.")
-    else:
-        st.dataframe(all_assignments, use_container_width=True)
+    st.info("No assignments created yet.")
+else:
+    st.dataframe(all_assignments, use_container_width=True)
 
     # SUBMISSIONS & AI
     with tabs[3]:
