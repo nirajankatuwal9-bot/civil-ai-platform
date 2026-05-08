@@ -180,7 +180,7 @@ def vision_grade(pdf_path, rubric):
         images = convert_from_path(pdf_path)
 
         #Use Gemini Flash Model
-        model=genai.GenerativeModel('gemini-1.5-flash')
+        model=genai.GenerativeModel('gemini-3-flash-preview')
 
         #prepare the text prompt
         prompt = """
