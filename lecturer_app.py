@@ -325,13 +325,13 @@ if role == "lecturer":
 # sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
         st.subheader("create New Assignment")
 
-        sems = pd.read_sql_query("SELECT * FROM semesters", conn)
+        sems = pd.read_sql_query("SELECT * FROM semesters ORDER by name ASC", conn)
 
         if sems.empty:
             st.warning("Please create a semester first.")
         else:
             sem_name = st.selectbox("Select Semester", sems["name"], key="assign_sem")
-            sem_id = sems[sems["name"] == sem_name]["id"].values[0]
+            sem_id = int(sems[sems["name"] == sem_name]["id"].values[0])
 
             subjects = pd.read_sql_query(
                 "SELECT * FROM subjects WHERE semester_id=?",
@@ -352,7 +352,7 @@ if role == "lecturer":
                 }
 
                 selected_subject = st.selectbox("Select Subject", list(subject_options.keys()))
-                sub_id = subject_options[selected_subject]
+                sub_id = int(subject_options[selected_subject])
 
                 title = st.text_input("Assignment Title")
                 deadline = st.date_input("Deadline")
@@ -374,7 +374,7 @@ if role == "lecturer":
                             c.execute("""
                             INSERT INTO assignments(title,subject_id,deadline,question_file)
                             VALUES(?,?,?,?)
-                            """, (title.strip(), sub_id, str(deadline), file_path))
+                            """, (title.strip(), int(sub_id), str(deadline), file_path))
 
                             conn.commit()
                             st.success("✅ Assignment Created Successfully!")
