@@ -2528,45 +2528,4 @@ elif role == "student":
                 
         except Exception as e:
             st.error("⚠️ System error loading results. Please contact Er. Nirajan Katuwal.")
-            # st.write(e) # Uncomment for debugging
-    # ================= RESULTS =================
-    #with tabs[2]:
-     #   st.subheader("📝 My Graded Results")
-
-        # We must JOIN submissions to assignments, then assignments to subjects
-        # to get the subject name.
-      #  query = """
-       # SELECT 
-        #    subjects.name as Subject, 
-         #   assignments.title as Assignment, 
-          #  submissions.marks as Marks,
-           # submissions.submission_time as Date
-        #FROM submissions
-        #INNER JOIN assignments ON submissions.assignment_id = assignments.id
-        #INNER JOIN subjects ON assignments.subject_id = subjects.id
-        #WHERE submissions.student_id = ? AND submissions.marks IS NOT NULL AND submissions.marks != ''
-        #ORDER BY submissions.id DESC
-        #"""
-
-        #try:
-            # Ensure user_id is passed as a clean integer
-         #   student_id = int(st.session_state.user_id)
-            
-          #  results = pd.read_sql_query(query, conn, params=(student_id,))
-
-           # if results.empty:
-            #    st.info("No graded results found yet. Check back once the lecturer has processed your submission.")
-            #else:
-                # Optional: Format the marks to look better
-             #   results['Marks'] = results['Marks'].apply(lambda x: f"{x}/10")
-                
-              #  st.dataframe(
-               #     results, 
-                #    use_container_width=True, 
-                 #   hide_index=True
-                #)
-        #except Exception as e:
-         #   st.error("Database Connection Error. Please notify the administrator.")
-            # For your own debugging, you can uncomment the line below:
-            # st.write(f"Debug Info: {e}")
-    
+         
