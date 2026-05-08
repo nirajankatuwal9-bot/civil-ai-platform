@@ -516,7 +516,7 @@ if role == "lecturer":
                                                 st.rerun()
                                             else:
                                                 st.warning("⚠️ Could not extract marks from AI response")
-                                         except Exception as e:
+                                        except Exception as e:
                                             st.error(f"Error during AI grading: {e}")
                         with col_b:
                             # Manual grade override
