@@ -1166,6 +1166,8 @@ if role == "lecturer":
                     
                     with open(file_path, "wb") as f:
                         f.write(uploaded_file.getbuffer())
+                    if file_extension.lower() == "pdf":
+                        apply_watermark(file_path)
                     
                     # Save to database
                     c.execute("""
