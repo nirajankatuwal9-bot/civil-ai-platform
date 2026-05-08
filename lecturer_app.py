@@ -558,7 +558,7 @@ if role == "lecturer":
                                             st.write(result)
 
                                             #check if result contains error
-                                            if result and "Error" not is str(result):
+                                            if result and "Error" not in str(result):
                                                 marks = extract_marks(result)
                                             if marks is not None:
                                                 c.execute(
