@@ -153,16 +153,16 @@ if not st.session_state.logged_in:
                 params=(user,)
             )
 
-        if not res.empty and check_pw(pw, df.iloc[0]["password"]):
-            st.session_state.logged_in = True
-            st.session_state.user_id = res.iloc[0]["id"]
-            st.session_state.role = res.iloc[0]["role"]
-            st.session_state.username = res.iloc[0]["username"]
-            st.rerun()
-        else:
-            st.error("Invalid credentials")
+            if not res.empty and check_pw(pw, df.iloc[0]["password"]):
+                st.session_state.logged_in = True
+                st.session_state.user_id = res.iloc[0]["id"]
+                st.session_state.role = res.iloc[0]["role"]
+                st.session_state.username = res.iloc[0]["username"]
+                st.rerun()
+            else:
+                st.error("Invalid credentials")
 
-    st.stop()
+        st.stop()
 
 # ================= LOGOUT =================
 
