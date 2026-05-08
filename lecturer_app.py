@@ -2294,7 +2294,7 @@ elif role == "student":
                 display_data = []
                 current_date = datetime.now().date()
 
-               for _, row in results_df.iterrows():
+            for _, row in results_df.iterrows():
                     # Parse deadline
                     deadline_date = datetime.strptime(str(row['Deadline']), '%Y-%m-%d').date()
                     current_date = datetime.now().date()
