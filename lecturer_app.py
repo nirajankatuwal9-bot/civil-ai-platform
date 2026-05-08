@@ -805,7 +805,7 @@ elif role == "student":
                         uploaded = st.file_uploader(
                             "📤 Upload Your PDF",
                             type=["pdf"],
-                            key="upload_" + str(row['id'])"
+                            key="upload_" + str(row['id'])
                         )
 
                         if st.button("Submit Assignment", key="submit_" + str(row['id'])):
