@@ -2177,12 +2177,13 @@ elif role == "student":
     with tabs[2]:  # ← Changed from tabs[1] to tabs[2]
         
         results = pd.read_sql_query("""
-        SELECT assignments.title, submissions.marks
+        SELECT subjects.name as Subject, assignments.title, submissions.marks
         FROM submissions
         JOIN assignments ON submissions.assignment_id = assignments.id
+        JOIN subjects ON assignment.subject_id = subjects.id
         WHERE submissions.student_id=?
         ORDER BY submissions.id DESC
-        """, conn, params=(st.session_state.user_id,))
+        """, conn, params=(int(st.session_state.user_id,)))
 
         if results.empty:
             st.info("No results available yet.")
