@@ -610,105 +610,103 @@ if role == "lecturer":
 
     # MANAGE STUDENTS
     with tabs[5]:
-    
-    # TEMPORARY FIX BUTTON - Remove after fixing all students
-    st.subheader("⚠️ Emergency Fix for Existing Students")
-    
-    if st.button("🔧 Fix ALL Students with NULL semester"):
-        # Get first semester as default
-        default_sem = pd.read_sql_query("SELECT id FROM semesters ORDER BY id ASC LIMIT 1", conn)
         
-        if not default_sem.empty:
-            default_sem_id = int(default_sem.iloc[0]['id'])
+        # TEMPORARY FIX BUTTON - Remove after fixing all students
+        st.subheader("⚠️ Emergency Fix for Existing Students")
+        
+        if st.button("🔧 Fix ALL Students with NULL semester"):
+            # Get first semester as default
+            default_sem = pd.read_sql_query("SELECT id FROM semesters ORDER BY id ASC LIMIT 1", conn)
             
-            # Update all students with NULL semester_id
-            c.execute("""
-            UPDATE users 
-            SET semester_id = ? 
-            WHERE role = 'student' AND semester_id IS NULL
-            """, (default_sem_id,))
-            
-            conn.commit()
-            
-            affected = c.rowcount
-            st.success("✅ Fixed {} students - assigned to semester_id {}".format(affected, default_sem_id))
-            st.rerun()
-        else:
-            st.error("No semesters available to assign")
-    
-    st.divider()
-    
-    # ... rest of the Manage Students code ...
-
+            if not default_sem.empty:
+                default_sem_id = int(default_sem.iloc[0]['id'])
+                
+                # Update all students with NULL semester_id
+                c.execute("""
+                UPDATE users 
+                SET semester_id = ? 
+                WHERE role = 'student' AND semester_id IS NULL
+                """, (default_sem_id,))
+                
+                conn.commit()
+                
+                affected = c.rowcount
+                st.success("✅ Fixed {} students - assigned to semester_id {}".format(affected, default_sem_id))
+                st.rerun()
+            else:
+                st.error("No semesters available to assign")
+        
+        st.divider()
+        
         st.subheader("Add Student Manually")
 
-col1, col2 = st.columns(2)
+        col1, col2 = st.columns(2)
 
-with col1:
-    student_name = st.text_input("Full Name", key="student_name")
-    username = st.text_input("Username", key="student_username")
-    password = st.text_input("Password", type="password", key="student_password")
+        with col1:
+            student_name = st.text_input("Full Name", key="student_name")
+            username = st.text_input("Username", key="student_username")
+            password = st.text_input("Password", type="password", key="student_password")
 
-with col2:
-    sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        with col2:
+            sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
 
-    if sems.empty:
-        st.warning("Please create semesters first.")
-    else:
-        semester_name = st.selectbox("Assign Semester", sems["name"], key="student_semester")
-        semester_id = int(sems[sems["name"] == semester_name]["id"].values[0])
-        
-        # Show what will be inserted
-        st.info("Will assign semester_id: {}".format(semester_id))
-
-        if st.button("Create Student"):
-
-            if not username or not password:
-                st.error("Username and password required.")
-            elif not student_name:
-                st.error("Full name is required.")
+            if sems.empty:
+                st.warning("Please create semesters first.")
             else:
-                try:
-                    # Use explicit integer conversion
-                    semester_id_to_insert = int(semester_id)
-                    
-                    st.write("DEBUG: Inserting with semester_id = {} (type: {})".format(
-                        semester_id_to_insert, 
-                        type(semester_id_to_insert)
-                    ))
-                    
-                    c.execute("""
-                    INSERT INTO users(full_name, username, password, role, semester_id)
-                    VALUES(?, ?, ?, ?, ?)
-                    """, (
-                        student_name.strip(),
-                        username.strip(),
-                        hash_password(password.strip()),
-                        "student",
-                        semester_id_to_insert
-                    ))
-                    conn.commit()
-                    
-                    # Verify insertion
-                    verify = pd.read_sql_query(
-                        "SELECT * FROM users WHERE username=?",
-                        conn,
-                        params=(username.strip(),)
-                    )
-                    
-                    if not verify.empty:
-                        st.success("✅ Student '{}' created!".format(username))
-                        st.write("**Verification:** semester_id saved as: {}".format(verify.iloc[0]['semester_id']))
-                        st.rerun()
+                semester_name = st.selectbox("Assign Semester", sems["name"], key="student_semester")
+                semester_id = int(sems[sems["name"] == semester_name]["id"].values[0])
+                
+                # Show what will be inserted
+                st.info("Will assign semester_id: {}".format(semester_id))
+
+                if st.button("Create Student"):
+
+                    if not username or not password:
+                        st.error("Username and password required.")
+                    elif not student_name:
+                        st.error("Full name is required.")
                     else:
-                        st.error("Student created but verification failed")
-                        
-                except sqlite3.IntegrityError:
-                    st.error("Username already exists.")
-                except Exception as e:
-                    st.error("Error creating student: {}".format(str(e)))
-                    import traceback
-                    st.code(traceback.format_exc())
+                        try:
+                            # Use explicit integer conversion
+                            semester_id_to_insert = int(semester_id)
+                            
+                            st.write("DEBUG: Inserting with semester_id = {} (type: {})".format(
+                                semester_id_to_insert, 
+                                type(semester_id_to_insert)
+                            ))
+                            
+                            c.execute("""
+                            INSERT INTO users(full_name, username, password, role, semester_id)
+                            VALUES(?, ?, ?, ?, ?)
+                            """, (
+                                student_name.strip(),
+                                username.strip(),
+                                hash_password(password.strip()),
+                                "student",
+                                semester_id_to_insert
+                            ))
+                            conn.commit()
+                            
+                            # Verify insertion
+                            verify = pd.read_sql_query(
+                                "SELECT * FROM users WHERE username=?",
+                                conn,
+                                params=(username.strip(),)
+                            )
+                            
+                            if not verify.empty:
+                                st.success("✅ Student '{}' created!".format(username))
+                                st.write("**Verification:** semester_id saved as: {}".format(verify.iloc[0]['semester_id']))
+                                st.rerun()
+                            else:
+                                st.error("Student created but verification failed")
+                                
+                        except sqlite3.IntegrityError:
+                            st.error("Username already exists.")
+                        except Exception as e:
+                            st.error("Error creating student: {}".format(str(e)))
+                            import traceback
+                            st.code(traceback.format_exc())
 
         st.divider()
 
@@ -760,118 +758,119 @@ with col2:
 
         st.divider()
 
-st.subheader("Student List")
+        st.subheader("Student List")
 
-# Enhanced query to debug
-students = pd.read_sql_query("""
-SELECT users.id, users.full_name, users.username, users.semester_id, semesters.name as semester
-FROM users
-LEFT JOIN semesters ON users.semester_id = semesters.id
-WHERE users.role='student'
-ORDER BY users.id DESC
-""", conn)
+        # Enhanced query to debug
+        students = pd.read_sql_query("""
+        SELECT users.id, users.full_name, users.username, users.semester_id, semesters.name as semester
+        FROM users
+        LEFT JOIN semesters ON users.semester_id = semesters.id
+        WHERE users.role='student'
+        ORDER BY users.id DESC
+        """, conn)
 
-if students.empty:
-    st.info("No students added yet.")
-else:
-    # Show ALL columns including semester_id for debugging
-    st.dataframe(
-        students,
-        use_container_width=True,
-        hide_index=True
-    )
-    
-    # Show raw database data
-    with st.expander("🔍 Debug: Raw Database Data"):
-        raw_users = pd.read_sql_query("""
-        SELECT id, username, full_name, semester_id, role 
+        if students.empty:
+            st.info("No students added yet.")
+        else:
+            # Show ALL columns including semester_id for debugging
+            st.dataframe(
+                students,
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Show raw database data
+            with st.expander("🔍 Debug: Raw Database Data"):
+                raw_users = pd.read_sql_query("""
+                SELECT id, username, full_name, semester_id, role 
+                FROM users 
+                WHERE role='student'
+                ORDER BY id DESC
+                """, conn)
+                st.write("**Users table (students only):**")
+                st.dataframe(raw_users, use_container_width=True, hide_index=True)
+                
+                all_semesters = pd.read_sql_query("SELECT * FROM semesters", conn)
+                st.write("**Semesters table:**")
+                st.dataframe(all_semesters, use_container_width=True, hide_index=True)
+
+            student_options = {
+                "{} | {} | {}".format(
+                    row['semester'] if row['semester'] else 'NO SEMESTER', 
+                    row['username'], 
+                    row['full_name']
+                ): row['id']
+                for _, row in students.iterrows()
+            }
+
+            selected_student = st.selectbox(
+                "Select Student to Delete",
+                list(student_options.keys()),
+                key="delete_student_select"
+            )
+
+            if st.button("Delete Selected Student"):
+                student_id = student_options[selected_student]
+                c.execute("DELETE FROM submissions WHERE student_id=?", (student_id,))
+                c.execute("DELETE FROM users WHERE id=?", (student_id,))
+                conn.commit()
+                st.success("Student deleted successfully.")
+                st.rerun()
+        
+        st.divider()
+        st.subheader("🔧 Fix Student Semester Assignment")
+
+        # Get all students
+        all_students = pd.read_sql_query("""
+        SELECT id, username, full_name, semester_id 
         FROM users 
         WHERE role='student'
-        ORDER BY id DESC
+        ORDER BY username ASC
         """, conn)
-        st.write("**Users table (students only):**")
-        st.dataframe(raw_users, use_container_width=True, hide_index=True)
-        
-        all_semesters = pd.read_sql_query("SELECT * FROM semesters", conn)
-        st.write("**Semesters table:**")
-        st.dataframe(all_semesters, use_container_width=True, hide_index=True)
 
-    student_options = {
-        "{} | {} | {}".format(
-            row['semester'] if row['semester'] else 'NO SEMESTER', 
-            row['username'], 
-            row['full_name']
-        ): row['id']
-        for _, row in students.iterrows()
-    }
-
-    selected_student = st.selectbox(
-        "Select Student to Delete",
-        list(student_options.keys()),
-        key="delete_student_select"
-    )
-
-    if st.button("Delete Selected Student"):
-        student_id = student_options[selected_student]
-        c.execute("DELETE FROM submissions WHERE student_id=?", (student_id,))
-        c.execute("DELETE FROM users WHERE id=?", (student_id,))
-        conn.commit()
-        st.success("Student deleted successfully.")
-        st.rerun()
-st.divider()
-st.subheader("🔧 Fix Student Semester Assignment")
-
-# Get all students
-all_students = pd.read_sql_query("""
-SELECT id, username, full_name, semester_id 
-FROM users 
-WHERE role='student'
-ORDER BY username ASC
-""", conn)
-
-if not all_students.empty:
-    student_options_fix = {
-        "{} ({})".format(row['username'], row['full_name']): row['id']
-        for _, row in all_students.iterrows()
-    }
-    
-    selected_student_fix = st.selectbox(
-        "Select Student to Update",
-        list(student_options_fix.keys()),
-        key="fix_student_select"
-    )
-    
-    sems_fix = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
-    
-    if not sems_fix.empty:
-        semester_to_assign = st.selectbox(
-            "Assign to Semester",
-            sems_fix["name"].tolist(),
-            key="fix_semester_select"
-        )
-        
-        if st.button("Update Student Semester", key="update_semester_btn"):
-            student_id_to_fix = student_options_fix[selected_student_fix]
-            new_sem_id = int(sems_fix[sems_fix["name"] == semester_to_assign]["id"].values[0])
+        if not all_students.empty:
+            student_options_fix = {
+                "{} ({})".format(row['username'], row['full_name']): row['id']
+                for _, row in all_students.iterrows()
+            }
             
-            try:
-                c.execute(
-                    "UPDATE users SET semester_id=? WHERE id=?",
-                    (int(new_sem_id), int(student_id_to_fix))
+            selected_student_fix = st.selectbox(
+                "Select Student to Update",
+                list(student_options_fix.keys()),
+                key="fix_student_select"
+            )
+            
+            sems_fix = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+            
+            if not sems_fix.empty:
+                semester_to_assign = st.selectbox(
+                    "Assign to Semester",
+                    sems_fix["name"].tolist(),
+                    key="fix_semester_select"
                 )
-                conn.commit()
                 
-                # Verify the update
-                verify = pd.read_sql_query(
-                    "SELECT semester_id FROM users WHERE id=?",
-                    conn,
-                    params=(int(student_id_to_fix),)
-                )
-                
-                st.success("✅ Student updated! New semester_id: {}".format(verify.iloc[0]['semester_id']))
-                st.rerun()
-            except Exception as e:
-                st.error("Error updating: {}".format(str(e)))
+                if st.button("Update Student Semester", key="update_semester_btn"):
+                    student_id_to_fix = student_options_fix[selected_student_fix]
+                    new_sem_id = int(sems_fix[sems_fix["name"] == semester_to_assign]["id"].values[0])
+                    
+                    try:
+                        c.execute(
+                            "UPDATE users SET semester_id=? WHERE id=?",
+                            (int(new_sem_id), int(student_id_to_fix))
+                        )
+                        conn.commit()
+                        
+                        # Verify the update
+                        verify = pd.read_sql_query(
+                            "SELECT semester_id FROM users WHERE id=?",
+                            conn,
+                            params=(int(student_id_to_fix),)
+                        )
+                        
+                        st.success("✅ Student updated! New semester_id: {}".format(verify.iloc[0]['semester_id']))
+                        st.rerun()
+                    except Exception as e:
+                        st.error("Error updating: {}".format(str(e)))
 
 # ==========================================================
 # ===================== STUDENT =============================
