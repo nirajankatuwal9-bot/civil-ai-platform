@@ -3106,18 +3106,36 @@ elif role == "student":
     tabs = st.tabs(["Assignments","Study Materials", "My Results"])
 
         # ================= ASSIGNMENTS =================
+    # ================= ASSIGNMENTS =================
     with tabs[0]:
-
         st.title("📝 My Assignments")
-        
-        # ========== ANNOUNCEMENTS ==========
-        announcements = get_announcements_for_semester (sem_id)
+
+        # 1. First, get student's semester info
+        student_info = pd.read_sql_query(
+            "SELECT semester_id, username FROM users WHERE id=?",
+            conn,
+            params=(int(st.session_state.user_id),)
+        )
+
+        if student_info.empty:
+            st.error("Student record not found.")
+            st.stop()
+
+        sem_id_raw = student_info.iloc[0]["semester_id"]
+
+        if sem_id_raw is None or str(sem_id_raw).strip() == "":
+            st.warning("You are not assigned to a semester. Please Contact your Lecturer")
+            st.stop()
+
+        # 2. Define sem_id clearly as an integer
+        sem_id = int(sem_id_raw)
+
+        # 3. NOW load announcements using that sem_id
+        announcements = get_announcements_for_semester(sem_id)
         
         if not announcements.empty:
             st.subheader("📢 Announcements")
-            
             for _, ann in announcements.iterrows():
-                
                 # Color based on priority
                 if ann['priority'] == 'Urgent':
                     color = '#ff4444'
@@ -3137,7 +3155,7 @@ elif role == "student":
                     <small style='color: #f0f0f0;'>Posted by {} on {}</small>
                 </div>
                 """.format(
-                    color + '22',  # Light background
+                    color + '22', 
                     color,
                     icon,
                     ann['title'],
@@ -3147,6 +3165,9 @@ elif role == "student":
                 ), unsafe_allow_html=True)
             
             st.divider()
+
+        # 4. Continue with the rest of your Assignment logic...
+        # (Deadline reminders, assignment list, etc.)
 
         st.title("📝 My Assignments")
 
