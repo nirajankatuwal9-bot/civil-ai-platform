@@ -917,71 +917,116 @@ if role == "lecturer":
                     st.success("{} students uploaded successfully. {} failed.".format(success_count, error_count))
                     st.rerun()
 
-        st.divider()
+                st.divider()
+        st.subheader("📋 Registered Student List")
 
-        st.subheader("Student List")
+        # 1. Filter Dropdown for Sorting/Viewing
+        all_sems_list = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        filter_col1, filter_col2 = st.columns([1, 2])
+        
+        with filter_col1:
+            list_filter = st.selectbox("View Students by Semester", ["All"] + all_sems_list["name"].tolist(), key="view_filter")
 
-        # Enhanced query to debug
-        students = pd.read_sql_query("""
-        SELECT users.id, users.full_name, users.username, users.semester_id, semesters.name as semester
-        FROM users
-        LEFT JOIN semesters ON users.semester_id = semesters.id
-        WHERE users.role='student'
-        ORDER BY users.id DESC
-        """, conn)
-
-        if students.empty:
-            st.info("No students added yet.")
+        # 2. Build Query: Sorted by Semester, then Alphabetically by Name
+        if list_filter == "All":
+            students_df = pd.read_sql_query("""
+                SELECT 
+                    users.id as ID,
+                    users.full_name as Name, 
+                    users.username as Username, 
+                    COALESCE(semesters.name, 'No Semester') as Semester
+                FROM users 
+                LEFT JOIN semesters ON users.semester_id = semesters.id 
+                WHERE users.role='student' 
+                ORDER BY semesters.name ASC, users.full_name ASC
+            """, conn)
         else:
-            # Show ALL columns including semester_id for debugging
+            students_df = pd.read_sql_query("""
+                SELECT 
+                    users.id as ID,
+                    users.full_name as Name, 
+                    users.username as Username, 
+                    semesters.name as Semester
+                FROM users 
+                JOIN semesters ON users.semester_id = semesters.id 
+                WHERE users.role='student' AND semesters.name = ?
+                ORDER BY users.full_name ASC
+            """, conn, params=(list_filter,))
+
+        # 3. Display the List (hide ID column from view)
+        if not students_df.empty:
             st.dataframe(
-                students,
-                use_container_width=True,
+                students_df[['Name', 'Username', 'Semester']], 
+                use_container_width=True, 
                 hide_index=True
             )
             
-            # Show raw database data
-            with st.expander("🔍 Debug: Raw Database Data"):
-                raw_users = pd.read_sql_query("""
-                SELECT id, username, full_name, semester_id, role 
-                FROM users 
-                WHERE role='student'
-                ORDER BY id DESC
-                """, conn)
-                st.write("**Users table (students only):**")
-                st.dataframe(raw_users, use_container_width=True, hide_index=True)
-                
-                all_semesters = pd.read_sql_query("SELECT * FROM semesters", conn)
-                st.write("**Semesters table:**")
-                st.dataframe(all_semesters, use_container_width=True, hide_index=True)
+            # Show total count
+            st.info(f"📊 Total Students: **{len(students_df)}**")
+        else:
+            st.info("No students found.")
 
+        # 4. DOWNLOAD STUDENT LIST AS CSV
+        if not students_df.empty:
+            csv_students = students_df[['Name', 'Username', 'Semester']].to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=f"📥 Download {list_filter} Student List (CSV)",
+                data=csv_students,
+                file_name=f"Students_{list_filter}.csv",
+                mime='text/csv',
+                use_container_width=True
+            )
+
+        st.divider()
+        st.subheader("🗑️ Delete Student")
+
+        # Create options list for deletion based on current filtered view
+        if not students_df.empty:
+            # Use ID as the unique key for deletion
             student_options = {
                 "{} | {} | {}".format(
-                    row['semester'] if row['semester'] else 'NO SEMESTER', 
-                    row['username'], 
-                    row['full_name']
-                ): row['id']
-                for _, row in students.iterrows()
+                    row['Semester'] if row['Semester'] else 'No Semester', 
+                    row['Username'], 
+                    row['Name']
+                ): row['ID']
+                for _, row in students_df.iterrows()
             }
 
             selected_student = st.selectbox(
-                "Select Student to Delete",
+                "Select Student to Remove",
                 list(student_options.keys()),
                 key="delete_student_select"
             )
 
-            if st.button("Delete Selected Student"):
-                student_id = student_options[selected_student]
-                c.execute("DELETE FROM submissions WHERE student_id=?", (student_id,))
-                c.execute("DELETE FROM users WHERE id=?", (student_id,))
-                conn.commit()
-                st.success("Student deleted successfully.")
-                st.rerun()
-        
-        st.divider()
-        st.subheader("🔧 Fix Student Semester Assignment")
+            col_del1, col_del2 = st.columns([1, 3])
+            
+            with col_del1:
+                if st.button("🗑️ Confirm Delete", type="primary", use_container_width=True):
+                    student_id = student_options[selected_student]
+                    
+                    try:
+                        # Delete submissions first (foreign key constraint)
+                        c.execute("DELETE FROM submissions WHERE student_id=?", (int(student_id),))
+                        # Then delete user
+                        c.execute("DELETE FROM users WHERE id=?", (int(student_id),))
+                        conn.commit()
+                        
+                        st.success("✅ Student removed successfully!")
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error("Error deleting student: {}".format(str(e)))
+            
+            with col_del2:
+                st.warning("⚠️ This action cannot be undone. All submissions will be deleted.")
 
-        # Get all students
+        else:
+            st.info("No students to delete.")
+
+        st.divider()
+        st.subheader("🔧 Update Student Semester Assignment")
+
+        # Get all students for semester update
         all_students = pd.read_sql_query("""
         SELECT id, username, full_name, semester_id 
         FROM users 
@@ -990,26 +1035,50 @@ if role == "lecturer":
         """, conn)
 
         if not all_students.empty:
-            student_options_fix = {
+            student_update_options = {
                 "{} ({})".format(row['username'], row['full_name']): row['id']
                 for _, row in all_students.iterrows()
             }
             
-            selected_student_fix = st.selectbox(
-                "Select Student to Update",
-                list(student_options_fix.keys()),
-                key="fix_student_select"
-            )
+            col_update1, col_update2 = st.columns(2)
             
-            sems_fix = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
-            
-            if not sems_fix.empty:
-                semester_to_assign = st.selectbox(
-                    "Assign to Semester",
-                    sems_fix["name"].tolist(),
-                    key="fix_semester_select"
+            with col_update1:
+                selected_student_update = st.selectbox(
+                    "Select Student",
+                    list(student_update_options.keys()),
+                    key="update_student_select"
                 )
+            
+            with col_update2:
+                sems_update = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
                 
+                if not sems_update.empty:
+                    new_semester = st.selectbox(
+                        "Assign to Semester",
+                        sems_update["name"].tolist(),
+                        key="update_semester_select"
+                    )
+                    
+                    if st.button("💾 Update Semester Assignment", use_container_width=True):
+                        student_id_update = student_update_options[selected_student_update]
+                        new_sem_id = int(sems_update[sems_update["name"] == new_semester]["id"].values[0])
+                        
+                        try:
+                            c.execute(
+                                "UPDATE users SET semester_id=? WHERE id=?",
+                                (int(new_sem_id), int(student_id_update))
+                            )
+                            conn.commit()
+                            
+                            st.success("✅ Student assigned to {} successfully!".format(new_semester))
+                            st.rerun()
+                            
+                        except Exception as e:
+                            st.error("Error updating: {}".format(str(e)))
+                else:
+                    st.warning("No semesters available. Please create semesters first.")
+        else:
+            st.info("No students to update.")
                 if st.button("Update Student Semester", key="update_semester_btn"):
                     student_id_to_fix = student_options_fix[selected_student_fix]
                     new_sem_id = int(sems_fix[sems_fix["name"] == semester_to_assign]["id"].values[0])
