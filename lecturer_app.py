@@ -459,81 +459,82 @@ if role == "lecturer":
             use_container_width=True,
             hide_index=True
             )
-                st.divider()
-                st.subheader("🤖 AI Grading Tool")
+            st.divider()
+            st.subheader("🤖 AI Grading Tool")
 
-                rubric = st.text_area("Enter Model Answer / Rubric for AI Grading (applies to all below)",height=150)
-                for _, row in df.iterrows():
-                    with st.expander(f"👤 {row['username']} - {row['assignment']} ({row['subject']})"):
-                        col1,col2 = st.columns([2,1])
+            rubric = st.text_area("Enter Model Answer / Rubric for AI Grading (applies to all below)",height=150)
+            for _, row in df.iterrows():
+                with st.expander(f"👤 {row['username']} - {row['assignment']} ({row['subject']})"):
+                    col1,col2 = st.columns([2,1])
 
-                        with col1:
-                            st.write(f"**Student:** {row['full_name']} ({row['username']})")
-                            st.write(f"**Semester:** {row['semester']}")
-                            st.write(f"**Subject:** {row['subject']}")
-                            st.write(f"**Assignment:** {row['assignment']}")
-                            st.write(f"**Submitted:** {row['submission_time']}")
+                    with col1:
+                        st.write(f"**Student:** {row['full_name']} ({row['username']})")
+                        st.write(f"**Semester:** {row['semester']}")
+                        st.write(f"**Subject:** {row['subject']}")
+                        st.write(f"**Assignment:** {row['assignment']}")
+                        st.write(f"**Submitted:** {row['submission_time']}")
 
-                            if row['marks'] and str(row['marks']).strip():
-                                st.metric("Current Marks", f"{row['marks']}/10")
-                            else:
-                                st.info("Not graded yet")
+                        if row['marks'] and str(row['marks']).strip():
+                            st.metric("Current Marks", f"{row['marks']}/10")
+                        else:
+                            st.info("Not graded yet")
 
-                        with col2:
-                            if row["submission_file"] and os.path.exists(row["submission_file"]):
-                                with open(row["submission_file"], "rb") as f:
-                                    st.download_button("📥 Download Submission", 
-                                                       f,
-                                                       file_name=os.path.basename(row["submissions_file"]),
-                                                       key=f"dl_{row['id']}"
-                                                      )
-                        st.divider()
-
-                        #AI Grading 
+                    with col2:
                         if row["submission_file"] and os.path.exists(row["submission_file"]):
-                            col_a, col_b = st.columns(2)
-                            
-                            with col_a:
-                                if st.button (f"🤖 AI Grade", key=f"grade_{row['id']}"):
-                                    if not rubric.strip():
-                                        st.warning("⚠️ Please enter a rubric/model answer first")
-                                    else:
-                                        with st.spinner("AI is grading..."):
-                                            try:
-                                                result = vision_grade(row["submission_file"],rubric)
-                                                st.write("***AI Response:***")
-                                                st.write(result)
+                            with open(row["submission_file"], "rb") as f:
+                                st.download_button(
+                                    "📥 Download Submission", 
+                                    f,
+                                    file_name=os.path.basename(row["submissions_file"]),
+                                    key=f"dl_{row['id']}"
+                                )
+                    st.divider()
 
-                                                marks = extract_marks(result)
-                                                if marks is not None:
-                                                    c.execute(
-                                                        "UPDATE submissions SET marks=?, ai_summary=? WHERE id=?",
-                                                        (marks,result,row["id"])
-                                                    )
-                                                    conn.commit()
-                                                    st.success(f"✅ Updated marks: {marks}/10"
-                                                    st.rerun()
-                                                 else:
-                                                     st.warning("⚠️ Could not extract marks from AI response")
-                                            except Exception as e:
-                                                 st.error(f"Error during AI grading: {e}")
-                           with col_b:
-                               # Manual grade override
-                               manual_marks = st.number_input(
-                                    "Or enter marks manually",
-                                    min_value=0,
-                                    max_value=10,
-                                    value=int(row['marks']) if row['marks'] and str(row['marks']).strip() else 0,
-                                    key=f"manual_{row['id']}"
+                    #AI Grading 
+                    if row["submission_file"] and os.path.exists(row["submission_file"]):
+                        col_a, col_b = st.columns(2)
+                            
+                        with col_a:
+                           if st.button (f"🤖 AI Grade", key=f"grade_{row['id']}"):
+                                if not rubric.strip():
+                                    st.warning("⚠️ Please enter a rubric/model answer first")
+                                else:
+                                    with st.spinner("AI is grading..."):
+                                        try:
+                                            result = vision_grade(row["submission_file"],rubric)
+                                            st.write("***AI Response:***")
+                                            st.write(result)
+
+                                            marks = extract_marks(result)
+                                            if marks is not None:
+                                                c.execute(
+                                                    "UPDATE submissions SET marks=?, ai_summary=? WHERE id=?",
+                                                    (marks,result,row["id"])
+                                                )
+                                               conn.commit()
+                                               st.success(f"✅ Updated marks: {marks}/10"
+                                               st.rerun()
+                                            else:
+                                                st.warning("⚠️ Could not extract marks from AI response")
+                                         except Exception as e:
+                                            st.error(f"Error during AI grading: {e}")
+                        with col_b:
+                            # Manual grade override
+                            manual_marks = st.number_input(
+                                 "Or enter marks manually",
+                                min_value=0,
+                                max_value=10,
+                                value=int(row['marks']) if row['marks'] and str(row['marks']).strip() else 0,
+                                key=f"manual_{row['id']}"
+                           )
+                           if st.button("💾 Save Manual Marks", key=f"save_{row['id']}"):
+                               c.execute(
+                                    "UPDATE submissions SET marks=? WHERE id=?",
+                                    (manual_marks, row["id"])
                                )
-                               if st.button("💾 Save Manual Marks", key=f"save_{row['id']}"):
-                                   c.execute(
-                                        "UPDATE submissions SET marks=? WHERE id=?",
-                                        (manual_marks, row["id"])
-                                   )
-                                   conn.commit()
-                                   st.success(f"✅ Marks updated to {manual_marks}/10")
-                                   st.rerun()
+                               conn.commit()
+                               st.success(f"✅ Marks updated to {manual_marks}/10")
+                               st.rerun()
                 
                 # Show previous AI summary if exists
                 if row['ai_summary'] and str(row['ai_summary']).strip():
