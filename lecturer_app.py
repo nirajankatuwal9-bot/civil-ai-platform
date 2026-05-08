@@ -680,7 +680,7 @@ if role == "lecturer":
                 list(semester_options.keys()),
                 key="delete_semester"
             )
-                        if st.button("Delete Selected Semester"):
+            if st.button("Delete Selected Semester"):
 
                 sem_id = semester_options[selected_sem]
                 
