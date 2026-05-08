@@ -63,6 +63,55 @@ os.makedirs("assignment_files", exist_ok=True)
 os.makedirs("submission_files", exist_ok=True)
 os.makedirs("study_materials", exist_ok=True)
 
+# ================= ANNOUNCEMENTS =================
+
+def create_announcement(title, message, semester_id, priority, user_id):
+    """
+    Create a new announcement
+    Returns: (success, message)
+    """
+    try:
+        c.execute("""
+        INSERT INTO announcements(title, message, semester_id, created_by, created_at, priority)
+        VALUES(?,?,?,?,?,?)
+        """, (
+            title.strip(),
+            message.strip(),
+            int(semester_id) if semester_id else None,
+            int(user_id),
+            str(datetime.now()),
+            priority
+        ))
+        
+        conn.commit()
+        return True, "Announcement created successfully"
+    except Exception as e:
+        return False, "Error: {}".format(str(e))
+
+
+def get_announcements_for_semester(semester_id=None):
+    """
+    Get announcements for a specific semester or all
+    """
+    if semester_id:
+        df = pd.read_sql_query("""
+        SELECT announcements.*, users.full_name as author, semesters.name as semester
+        FROM announcements
+        LEFT JOIN users ON announcements.created_by = users.id
+        LEFT JOIN semesters ON announcements.semester_id = semesters.id
+        WHERE announcements.semester_id=? OR announcements.semester_id IS NULL
+        ORDER BY announcements.created_at DESC
+        """, conn, params=(int(semester_id),))
+    else:
+        df = pd.read_sql_query("""
+        SELECT announcements.*, users.full_name as author, semesters.name as semester
+        FROM announcements
+        LEFT JOIN users ON announcements.created_by = users.id
+        LEFT JOIN semesters ON announcements.semester_id = semesters.id
+        ORDER BY announcements.created_at DESC
+        """, conn)
+    
+    return df
 # ================= DATABASE =================
 
 DB_PATH = "data/lecturer.db"
