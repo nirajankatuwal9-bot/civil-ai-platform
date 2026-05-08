@@ -2294,34 +2294,38 @@ elif role == "student":
                 display_data = []
                 current_date = datetime.now().date()
 
-                for _, row in results_df.iterrows():
+               for _, row in results_df.iterrows():
                     # Parse deadline
                     deadline_date = datetime.strptime(str(row['Deadline']), '%Y-%m-%d').date()
+                    current_date = datetime.now().date()
+                    
+                    # Convert marks to a clean variable to check for empty/NaN
+                    raw_marks = row['Marks']
+                    has_marks = raw_marks is not None and str(raw_marks).lower() != 'nan' and str(raw_marks).strip() != ""
                     
                     status = ""
                     score = ""
                     
-                    # --- PRIORITY LOGIC ---
+                    # --- REFINED PRIORITY LOGIC ---
                     
-                    # 1. Check if actually graded
-                    if row['Marks'] is not None and str(row['Marks']).strip() != "":
-                        status = "✅ Graded"
-                        score = f"{row['Marks']}/10"
+                    # 1. Check if actually submitted first
+                    if row['Submitted_On'] is not None:
+                        if has_marks:
+                            status = "✅ Graded"
+                            score = f"{raw_marks}/10"
+                        else:
+                            status = "⏳ Pending Grade"
+                            score = "Processing"
                     
-                    # 2. Check if submitted but not graded yet
-                    elif row['Submitted_On'] is not None:
-                        status = "⏳ Pending Grade"
-                        score = "Processing"
-
-                    # 3. Check if MISSED (No submission + Deadline passed)
+                    # 2. If NOT submitted, check if the deadline has passed
                     elif current_date > deadline_date:
                         status = "❌ MISSED (Negligence)"
-                        score = "0/10" # Forced zero for overdue non-submissions
+                        score = "0/10"
                     
-                    # 4. Not submitted but still has time
+                    # 3. If NOT submitted and deadline is still in the future
                     else:
                         status = "📖 Open for Submission"
-                        score = "TBD"
+                        score = "Pending"
 
                     display_data.append({
                         "Subject": row['Subject'],
