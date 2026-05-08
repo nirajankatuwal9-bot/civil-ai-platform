@@ -554,32 +554,33 @@ if role == "lecturer":
                                     with st.spinner("AI is grading..."):
                                         try:
                                             result = vision_grade(row["submission_file"], rubric)
-                                            st.write("**AI Response:**")
-                                            st.write(result)
+                                            with st.expander("**AI Response:**", expanded= True):
+                                                st.write(result)
 
                                             #check if result contains error
                                             if result and "Error" not in str(result):
                                                 marks = extract_marks(result)
-                                            if marks is not None:
-                                                c.execute(
-                                                    "UPDATE submissions SET marks=?, ai_summary=? WHERE id=?",
-                                                    (marks, result, row["id"])
-                                                )
-                                                conn.commit()
-                                                st.success("Updated marks: {}/10".format(marks))
-                                                st.rerun()
+                                                
+                                                if marks is not None:
+                                                    c.execute(
+                                                        "UPDATE submissions SET marks=?, ai_summary=? WHERE id=?",
+                                                        (marks, result, row["id"])
+                                                    )
+                                                    conn.commit()
+                                                    st.success("Updated marks: {}/10".format(marks))
+                                                    st.rerun()
+                                                else:
+                                                    st.warning("Could not extract marks from AI response.Please enter manually below")
+                                                    st.info("Tip: Make sure AI response contains 'FINAL_MARKS: X/10'")
+                                                    #still save the AI summary even if marks extraction failed
+                                                    c. execute(
+                                                        "UPDATE submissions SER ai_summary=? WHERE id=?",
+                                                        (str(result), int(row["id"]))
+                                                    )
+                                                    conn.commit()
                                             else:
-                                                st.warning("Could not extract marks from AI response.Please enter manually below")
-                                                st.info("Tip: Make sure AI response contains 'FINAL_MARKS: X/10'")
-                                                #still save the AI summary even if marks extraction failed
-                                                c. execute(
-                                                    "UPDATE submissions SER ai_summary=? WHERE id=?",
-                                                    (str(result), int(row["id"]))
-                                                )
-                                                conn.commit()
-                                        else:
-                                            st.error("AI returned an error. Check the response above.")
-                                    except Exception as e:
+                                                st.error("AI returned an error. Check the response above.")
+                                        except Exception as e:
                                             st.error("Error during AI grading: {}".format(str(e)))
                                             import traceback 
                                             st.code(traceback.format_exc())
