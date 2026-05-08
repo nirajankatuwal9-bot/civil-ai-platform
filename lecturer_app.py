@@ -774,7 +774,7 @@ elif role == "student":
                     existing_submission = pd.read_sql_query("""
                     SELECT * FROM submissions
                     WHERE assignment_id=? AND student_id=?
-                    """, conn, params=(int(row["id"], int(st.session_state.user_id)))
+                    """, conn, params=(int(row["id"], int(st.session_state.user_id))))
 
                     if not existing_submission.empty:
                         st.success("✅ You have already submitted this assignment.")
