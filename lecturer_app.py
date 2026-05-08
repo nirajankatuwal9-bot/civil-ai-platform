@@ -1711,7 +1711,7 @@ if role == "lecturer":
 
             col_del1, col_del2 = st.columns([1, 3])
             
-             with col_del1:
+            with col_del1:
                 if st.button("🗑️ Confirm Delete", type="primary", use_container_width=True):
                     student_id = student_options[selected_student]
                     
