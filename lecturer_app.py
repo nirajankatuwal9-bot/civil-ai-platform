@@ -15,11 +15,43 @@ import google.generativeai as genai
 # ================= CONFIG =================
 
 st.set_page_config(
-    page_title="water flows by Nirajan Katuwal",
-    page_icon="🏗️",
+    page_title="The N-streamlines",
+    page_icon="🌊",
     layout="wide"
 )
 
+# ================= GLOBAL FOOTER =================
+
+st.markdown("""
+    <style>
+    /* Hide the default Streamlit watermark */
+    footer {visibility: hidden;}
+    
+    /* Create the custom NiraFlow footer */
+    .nira-footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background-color: #ffffff;
+        border-top: 1px solid #e1e4e8;
+        color: #555;
+        text-align: center;
+        padding: 12px 0;
+        font-size: 0.85em;
+        z-index: 999;
+    }
+    
+    /* Add padding to the bottom of the app so content doesn't hide behind the footer */
+    .block-container {
+        padding-bottom: 70px !important; 
+    }
+    </style>
+    
+    <div class="nira-footer">
+        <strong>🌊 NiraFlow.AI</strong> | Advanced Hydro-Informatics Platform | © 2026 Developed by Er. Nirajan Katuwal
+    </div>
+""", unsafe_allow_html=True)
 
 
 # ================= FOLDERS =================
@@ -189,7 +221,7 @@ with st.sidebar:
     
     st.markdown("""
         <div style='text-align: center; padding: 15px; background-color: #ffffff; border: 1px solid #e1e4e8; border-radius: 10px; border-top: 4px solid #004b87;'>
-            <h4 style='color: #004b87; margin-bottom: 5px; font-size: 1.1em;'>🌊 NiraFlow.AI</h4>
+            <h4 style='color: #004b87; margin-bottom: 5px; font-size: 1.1em;'>🌊 The N-Streamlines</h4>
             <p style='font-size: 0.85em; color: #555; margin-bottom: 10px; line-height: 1.4;'>
                 Advanced Hydro-Informatics &<br>Learning Management
             </p>
