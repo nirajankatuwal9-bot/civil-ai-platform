@@ -11,6 +11,7 @@ import base64
 import bcrypt
 from PIL import Image
 import google.generativeai as genai
+import fitz
 
 # ================= CONFIG =================
 
@@ -321,7 +322,29 @@ def extract_marks(text):
             except (ValueError, IndexError):
                 continue
     return none
-    
+def apply_watermark(file_path, watermark_text="🌊 NiraFlow.AI | Er. Nirajan Katuwal | Do Not Distribute"):
+    """Stamps a watermark on every page of a PDF."""
+    try:
+        doc = fitz.open(file_path)
+        for page in doc:
+            page_rect = page.rect
+            x_position = 30
+            y_position = page_rect.height - 30
+            
+            page.insert_text(
+                (x_position, y_position),
+                watermark_text,
+                fontsize=12,
+                color=(0.6, 0.6, 0.6), 
+                fill_opacity=0.5,      
+                overlay=True           
+            )
+        temp_path = file_path + "_wm.pdf"
+        doc.save(temp_path)
+        doc.close()
+        os.replace(temp_path, file_path)
+    except Exception as e:
+        st.error(f"Watermark Engine Error: {e}")    
 
 # ==========================================================
 # ===================== LECTURER ============================
@@ -491,6 +514,9 @@ if role == "lecturer":
                             file_path = f"assignment_files/{datetime.now().timestamp()}_{file.name}"
                             with open(file_path, "wb") as f:
                                 f.write(file.getbuffer())
+
+                            #trigger the watermark
+                            apply_watermark(file_path)
 
                         try:
                             c.execute("""
