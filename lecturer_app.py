@@ -21,7 +21,63 @@ st.set_page_config(
     page_icon="🌊",
     layout="wide"
 )
+# ================= MOBILE RESPONSIVENESS =================
 
+st.markdown("""
+<style>
+    /* Mobile optimizations */
+    @media (max-width: 768px) {
+        .block-container {
+            padding: 1rem 1rem 5rem 1rem !important;
+        }
+        
+        .stButton>button {
+            width: 100%;
+        }
+        
+        .stDataFrame {
+            font-size: 12px;
+        }
+        
+        h1 {
+            font-size: 1.5rem !important;
+        }
+        
+        h2 {
+            font-size: 1.3rem !important;
+        }
+        
+        h3 {
+            font-size: 1.1rem !important;
+        }
+    }
+    
+    /* Improve button visibility */
+    .stButton>button {
+        font-weight: 500;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+    }
+    
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    /* Better expander styling */
+    .streamlit-expanderHeader {
+        background-color: #f0f2f6;
+        border-radius: 8px;
+        font-weight: 500;
+    }
+    
+    /* Improve metric cards */
+    [data-testid="stMetricValue"] {
+        font-size: 1.8rem;
+        font-weight: 600;
+    }
+</style>
+""", unsafe_allow_html=True)
 # ================= GLOBAL FOOTER =================
 
 st.markdown("""
@@ -1021,6 +1077,46 @@ if role == "lecturer":
     with tabs[0]:
         
         st.title("📊 Dashboard")
+        
+        # ========== CREATE ANNOUNCEMENT ==========
+        with st.expander("📢 Create New Announcement"):
+            
+            col_ann1, col_ann2 = st.columns([2, 1])
+            
+            with col_ann1:
+                ann_title = st.text_input("Announcement Title", key="ann_title")
+                ann_message = st.text_area("Message", key="ann_message", height=100)
+            
+            with col_ann2:
+                sems_ann = pd.read_sql_query("SELECT * FROM semesters", conn)
+                ann_sem_options = ["All Semesters"] + sems_ann["name"].tolist()
+                
+                ann_sem = st.selectbox("Target Audience", ann_sem_options, key="ann_sem")
+                ann_priority = st.selectbox("Priority", ["Normal", "Important", "Urgent"], key="ann_priority")
+            
+            if st.button("📢 Post Announcement", type="primary"):
+                if not ann_title.strip() or not ann_message.strip():
+                    st.error("Title and message required")
+                else:
+                    sem_id = None
+                    if ann_sem != "All Semesters":
+                        sem_id = int(sems_ann[sems_ann["name"] == ann_sem]["id"].values[0])
+                    
+                    success, msg = create_announcement(
+                        ann_title,
+                        ann_message,
+                        sem_id,
+                        ann_priority,
+                        st.session_state.user_id
+                    )
+                    
+                    if success:
+                        st.success("✅ {}".format(msg))
+                        st.rerun()
+                    else:
+                        st.error("❌ {}".format(msg))
+        
+        st.divider()
         
         # Get all assignments
         all_assignments = pd.read_sql_query("""
@@ -3011,6 +3107,46 @@ elif role == "student":
 
         # ================= ASSIGNMENTS =================
     with tabs[0]:
+
+        st.title("📝 My Assignments")
+        
+        # ========== ANNOUNCEMENTS ==========
+        announcements = get_announcements_for_semester(sem_id)
+        
+        if not announcements.empty:
+            st.subheader("📢 Announcements")
+            
+            for _, ann in announcements.iterrows():
+                
+                # Color based on priority
+                if ann['priority'] == 'Urgent':
+                    color = '#ff4444'
+                    icon = '🚨'
+                elif ann['priority'] == 'Important':
+                    color = '#ff9800'
+                    icon = '⚠️'
+                else:
+                    color = '#4CAF50'
+                    icon = '📢'
+                
+                st.markdown("""
+                <div style='background-color: {}; padding: 15px; border-radius: 8px; 
+                            border-left: 5px solid {}; margin-bottom: 10px;'>
+                    <h4 style='margin:0; color: white;'>{} {}</h4>
+                    <p style='color: white; margin: 10px 0;'>{}</p>
+                    <small style='color: #f0f0f0;'>Posted by {} on {}</small>
+                </div>
+                """.format(
+                    color + '22',  # Light background
+                    color,
+                    icon,
+                    ann['title'],
+                    ann['message'],
+                    ann['author'],
+                    ann['created_at'][:16]
+                ), unsafe_allow_html=True)
+            
+            st.divider()
 
         st.title("📝 My Assignments")
 
