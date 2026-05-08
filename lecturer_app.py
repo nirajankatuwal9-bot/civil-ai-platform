@@ -322,7 +322,7 @@ def extract_marks(text):
             except (ValueError, IndexError):
                 continue
     return none
-def apply_watermark(file_path, watermark_text="🌊 NiraFlow.AI | Er. Nirajan Katuwal | Do Not Distribute"):
+def apply_watermark(file_path, watermark_text="🌊 The N-Streamlines | Er. Nirajan Katuwal | Do Not Distribute"):
     """Stamps a watermark on every page of a PDF."""
     try:
         doc = fitz.open(file_path)
