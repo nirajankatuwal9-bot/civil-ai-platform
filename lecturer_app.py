@@ -511,9 +511,9 @@ if role == "lecturer":
                                                     "UPDATE submissions SET marks=?, ai_summary=? WHERE id=?",
                                                     (marks,result,row["id"])
                                                 )
-                                               conn.commit()
-                                               st.success(f"✅ Updated marks: {marks}/10"
-                                               st.rerun()
+                                                conn.commit()
+                                                st.success(f"✅ Updated marks: {marks}/10"
+                                                st.rerun()
                                             else:
                                                 st.warning("⚠️ Could not extract marks from AI response")
                                          except Exception as e:
