@@ -158,6 +158,7 @@ if not st.session_state.logged_in:
                 st.session_state.user_id = res.iloc[0]["id"]
                 st.session_state.role = res.iloc[0]["role"]
                 st.session_state.username = res.iloc[0]["username"]
+                st.session_state.semester_id = res.iloc[0]["semester_id"]
                 st.rerun()
             else:
                 st.error("Invalid credentials")
