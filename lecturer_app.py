@@ -132,7 +132,18 @@ if "logged_in" not in st.session_state:
 
 if not st.session_state.logged_in:
 
-    st.title("🏗️ Civil Engineering AI Platform")
+    st.markdown("""
+        <div style='text-align: center; padding-bottom: 20px;'>
+            <h1 style='color: #004b87; font-size: 3em; margin-bottom: 0px;'>🌊 NiraFlow.AI</h1>
+            <p style='color: #555; font-size: 1.2em; font-weight: 500; margin-top: 5px;'>
+                THE N-STREAMLINES
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    #-------------------------------------------
+    with st.container(border=True):
+        
+                    
 
     user = st.text_input("Username")
     pw = st.text_input("Password", type="password")
