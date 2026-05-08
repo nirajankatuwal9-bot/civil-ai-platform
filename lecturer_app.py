@@ -2294,46 +2294,46 @@ elif role == "student":
                 display_data = []
                 current_date = datetime.now().date()
 
-            for _, row in results_df.iterrows():
-                    # Parse deadline
-                    deadline_date = datetime.strptime(str(row['Deadline']), '%Y-%m-%d').date()
-                    current_date = datetime.now().date()
+                for _, row in results_df.iterrows():
+                        # Parse deadline
+                        deadline_date = datetime.strptime(str(row['Deadline']), '%Y-%m-%d').date()
+                        current_date = datetime.now().date()
                     
-                    # Convert marks to a clean variable to check for empty/NaN
-                    raw_marks = row['Marks']
-                    has_marks = raw_marks is not None and str(raw_marks).lower() != 'nan' and str(raw_marks).strip() != ""
+                        # Convert marks to a clean variable to check for empty/NaN
+                        raw_marks = row['Marks']
+                        has_marks = raw_marks is not None and str(raw_marks).lower() != 'nan' and str(raw_marks).strip() != ""
                     
-                    status = ""
-                    score = ""
+                        status = ""
+                        score = ""
                     
-                    # --- REFINED PRIORITY LOGIC ---
+                        # --- REFINED PRIORITY LOGIC ---
                     
-                    # 1. Check if actually submitted first
-                    if row['Submitted_On'] is not None:
-                        if has_marks:
-                            status = "✅ Graded"
-                            score = f"{raw_marks}/10"
+                        # 1. Check if actually submitted first
+                        if row['Submitted_On'] is not None:
+                            if has_marks:
+                                status = "✅ Graded"
+                                score = f"{raw_marks}/10"
+                            else:
+                                status = "⏳ Pending Grade"
+                                score = "Processing"
+                    
+                        # 2. If NOT submitted, check if the deadline has passed
+                        elif current_date > deadline_date:
+                            status = "❌ MISSED (Negligence)"
+                            score = "0/10"
+                    
+                        # 3. If NOT submitted and deadline is still in the future
                         else:
-                            status = "⏳ Pending Grade"
-                            score = "Processing"
-                    
-                    # 2. If NOT submitted, check if the deadline has passed
-                    elif current_date > deadline_date:
-                        status = "❌ MISSED (Negligence)"
-                        score = "0/10"
-                    
-                    # 3. If NOT submitted and deadline is still in the future
-                    else:
-                        status = "📖 Open for Submission"
-                        score = "Pending"
+                            status = "📖 Open for Submission"
+                            score = "Pending"
 
-                    display_data.append({
-                        "Subject": row['Subject'],
-                        "Assignment": row['Assignment'],
-                        "Deadline": row['Deadline'],
-                        "Status": status,
-                        "Marks": score
-                    })
+                        display_data.append({
+                            "Subject": row['Subject'],
+                            "Assignment": row['Assignment'],
+                            "Deadline": row['Deadline'],
+                            "Status": status,
+                            "Marks": score
+                        })
 
                 # Create final dataframe
                 final_df = pd.DataFrame(display_data)
