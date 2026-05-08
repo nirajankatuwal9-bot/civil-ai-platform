@@ -50,7 +50,7 @@ st.markdown("""
     </style>
     
     <div class="nira-footer">
-        <strong>🌊 NiraFlow.AI</strong> | Advanced Hydro-Informatics Platform | © 2026 Developed by Er. Nirajan Katuwal
+        <strong>🌊 The N-Streamlines</strong> | Advanced Hydro-Informatics Platform | © 2026 Developed by Er. Nirajan Katuwal
     </div>
 """, unsafe_allow_html=True)
 
@@ -60,6 +60,7 @@ st.markdown("""
 os.makedirs("data", exist_ok=True)
 os.makedirs("assignment_files", exist_ok=True)
 os.makedirs("submission_files", exist_ok=True)
+os.makedirs("study_materials", exist_ok=True)
 
 # ================= DATABASE =================
 
@@ -119,7 +120,21 @@ CREATE TABLE IF NOT EXISTS submissions(
     ai_summary TEXT
 )
 """)
+# STUDY MATERIALS
+c.execute("""
+CREATE TABLE IF NOT EXISTS study_materials(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    subject_id INTEGER,
+    semester_id INTEGER,
+    file_path TEXT,
+    description TEXT,
+    upload_date TEXT,
+    uploaded_by INTEGER
+)
+""")
 
+conn.commit()
 conn.commit()
 
 # ================= PASSWORD HELPERS =================
@@ -358,7 +373,8 @@ if role == "lecturer":
         "Assignments",
         "Submissions & AI",
         "Analytics",
-        "Manage Students"
+        "Manage Students",
+        "Study Materilas"
     ])
 
     # SEMESTERS
@@ -1079,14 +1095,220 @@ if role == "lecturer":
                     st.warning("No semesters available. Please create semesters first.")
         else:
             st.info("No students to update.")
-
+            
+    # STUDY MATERIALS
+    with tabs[6]:
+        
+        st.title("📚 Study Materials Management")
+        
+        # ========== UPLOAD NEW MATERIAL ==========
+        st.subheader("📤 Upload New Study Material")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Select Semester
+            sems_material = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+            
+            if sems_material.empty:
+                st.warning("Please create semesters first.")
+            else:
+                material_semester = st.selectbox("Select Semester", sems_material["name"], key="material_semester")
+                material_sem_id = int(sems_material[sems_material["name"] == material_semester]["id"].values[0])
+                
+                # Get subjects for selected semester
+                subjects_material = pd.read_sql_query(
+                    "SELECT * FROM subjects WHERE semester_id=?",
+                    conn,
+                    params=(material_sem_id,)
+                )
+                
+                if subjects_material.empty:
+                    st.warning("No subjects found for this semester. Please create subjects first.")
+                    material_subject_id = None
+                else:
+                    material_subject = st.selectbox(
+                        "Select Subject", 
+                        subjects_material["name"], 
+                        key="material_subject"
+                    )
+                    material_subject_id = int(subjects_material[subjects_material["name"] == material_subject]["id"].values[0])
+        
+        with col2:
+            material_title = st.text_input("Material Title", placeholder="e.g., Chapter 3 - Structural Analysis")
+            material_description = st.text_area("Description (Optional)", placeholder="Brief description of the material...")
+        
+        # File Upload
+        uploaded_file = st.file_uploader(
+            "Upload Study Material (PDF, DOCX, PPTX, ZIP)",
+            type=["pdf", "docx", "pptx", "zip", "jpg", "png"],
+            key="study_material_upload"
+        )
+        
+        if st.button("📤 Upload Material", type="primary", use_container_width=True):
+            
+            if not material_title.strip():
+                st.error("⚠️ Please enter a title for the material.")
+            elif not uploaded_file:
+                st.error("⚠️ Please select a file to upload.")
+            elif material_subject_id is None:
+                st.error("⚠️ Please select a subject.")
+            else:
+                try:
+                    # Save file
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    file_extension = uploaded_file.name.split(".")[-1]
+                    file_path = "study_materials/{}_{}.{}".format(
+                        timestamp,
+                        material_title.replace(" ", "_"),
+                        file_extension
+                    )
+                    
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    # Save to database
+                    c.execute("""
+                    INSERT INTO study_materials(
+                        title, 
+                        subject_id, 
+                        semester_id, 
+                        file_path, 
+                        description, 
+                        upload_date, 
+                        uploaded_by
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        material_title.strip(),
+                        int(material_subject_id),
+                        int(material_sem_id),
+                        file_path,
+                        material_description.strip(),
+                        str(datetime.now()),
+                        int(st.session_state.user_id)
+                    ))
+                    
+                    conn.commit()
+                    st.success("✅ Study material uploaded successfully!")
+                    st.balloons()
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error("Error uploading material: {}".format(str(e)))
+        
+        st.divider()
+        
+        # ========== VIEW/MANAGE MATERIALS ==========
+        st.subheader("📋 Uploaded Study Materials")
+        
+        # Filter by semester
+        filter_sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        
+        if not filter_sems.empty:
+            filter_semester = st.selectbox(
+                "Filter by Semester", 
+                ["All"] + filter_sems["name"].tolist(), 
+                key="filter_materials_sem"
+            )
+            
+            # Query materials
+            if filter_semester == "All":
+                materials_df = pd.read_sql_query("""
+                SELECT 
+                    study_materials.id,
+                    study_materials.title,
+                    subjects.name as subject,
+                    semesters.name as semester,
+                    study_materials.description,
+                    study_materials.file_path,
+                    study_materials.upload_date
+                FROM study_materials
+                JOIN subjects ON study_materials.subject_id = subjects.id
+                JOIN semesters ON study_materials.semester_id = semesters.id
+                ORDER BY study_materials.upload_date DESC
+                """, conn)
+            else:
+                filter_sem_id = int(filter_sems[filter_sems["name"] == filter_semester]["id"].values[0])
+                materials_df = pd.read_sql_query("""
+                SELECT 
+                    study_materials.id,
+                    study_materials.title,
+                    subjects.name as subject,
+                    semesters.name as semester,
+                    study_materials.description,
+                    study_materials.file_path,
+                    study_materials.upload_date
+                FROM study_materials
+                JOIN subjects ON study_materials.subject_id = subjects.id
+                JOIN semesters ON study_materials.semester_id = semesters.id
+                WHERE study_materials.semester_id = ?
+                ORDER BY study_materials.upload_date DESC
+                """, conn, params=(filter_sem_id,))
+            
+            if materials_df.empty:
+                st.info("📭 No study materials uploaded yet.")
+            else:
+                st.dataframe(
+                    materials_df[["semester", "subject", "title", "upload_date"]],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                st.info("📊 Total Materials: **{}**".format(len(materials_df)))
+                
+                st.divider()
+                
+                # Individual material cards with download and delete
+                st.subheader("📚 Material Details")
+                
+                for _, material in materials_df.iterrows():
+                    with st.expander("📄 {} - {}".format(material['subject'], material['title'])):
+                        
+                        col_a, col_b = st.columns([3, 1])
+                        
+                        with col_a:
+                            st.write("**Semester:** {}".format(material['semester']))
+                            st.write("**Subject:** {}".format(material['subject']))
+                            st.write("**Title:** {}".format(material['title']))
+                            st.write("**Uploaded:** {}".format(material['upload_date']))
+                            if material['description']:
+                                st.write("**Description:** {}".format(material['description']))
+                        
+                        with col_b:
+                            # Download button
+                            if material['file_path'] and os.path.exists(material['file_path']):
+                                with open(material['file_path'], "rb") as f:
+                                    st.download_button(
+                                        "📥 Download",
+                                        f,
+                                        file_name=os.path.basename(material['file_path']),
+                                        key="download_material_{}".format(material['id']),
+                                        use_container_width=True
+                                    )
+                            
+                            # Delete button
+                            if st.button("🗑️ Delete", key="delete_material_{}".format(material['id']), use_container_width=True):
+                                try:
+                                    # Delete file
+                                    if os.path.exists(material['file_path']):
+                                        os.remove(material['file_path'])
+                                    
+                                    # Delete from database
+                                    c.execute("DELETE FROM study_materials WHERE id=?", (material['id'],))
+                                    conn.commit()
+                                    
+                                    st.success("✅ Material deleted!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error("Error deleting: {}".format(str(e)))
 # ==========================================================
 # ===================== STUDENT =============================
 # ==========================================================
 
 elif role == "student":
 
-    tabs = st.tabs(["Assignments", "My Results"])
+    tabs = st.tabs(["Assignments","Study Materials", "My Results"])
 
     # ================= ASSIGNMENTS =================
     with tabs[0]:
@@ -1232,9 +1454,91 @@ elif role == "student":
                                 st.balloons()
                                 st.rerun()
 
-    # ================= RESULTS =================
+        # ================= STUDY MATERIALS =================
     with tabs[1]:
+        
+        st.title("📚 Study Materials")
+        
+        # Get student's semester
+        student_info = pd.read_sql_query(
+            "SELECT semester_id FROM users WHERE id=?",
+            conn,
+            params=(int(st.session_state.user_id),)
+        )
+        
+        if student_info.empty or student_info.iloc[0]["semester_id"] is None:
+            st.warning("⚠️ You are not assigned to a semester. Please contact your lecturer.")
+        else:
+            sem_id = int(student_info.iloc[0]["semester_id"])
+            
+            # Get semester name
+            semester_info = pd.read_sql_query(
+                "SELECT name FROM semesters WHERE id=?",
+                conn,
+                params=(sem_id,)
+            )
+            
+            if not semester_info.empty:
+                st.info("📚 Study Materials for: **{}**".format(semester_info.iloc[0]['name']))
+            
+            # Get all materials for student's semester
+            materials = pd.read_sql_query("""
+            SELECT 
+                study_materials.id,
+                study_materials.title,
+                subjects.name as subject,
+                study_materials.description,
+                study_materials.file_path,
+                study_materials.upload_date
+            FROM study_materials
+            JOIN subjects ON study_materials.subject_id = subjects.id
+            WHERE study_materials.semester_id = ?
+            ORDER BY subjects.name ASC, study_materials.upload_date DESC
+            """, conn, params=(sem_id,))
+            
+            if materials.empty:
+                st.info("📭 No study materials available yet.")
+            else:
+                # Group by subject
+                subjects_list = materials['subject'].unique()
+                
+                for subject in subjects_list:
+                    st.subheader("📖 {}".format(subject))
+                    
+                    subject_materials = materials[materials['subject'] == subject]
+                    
+                    for _, material in subject_materials.iterrows():
+                        with st.expander("📄 {}".format(material['title'])):
+                            
+                            col1, col2 = st.columns([3, 1])
+                            
+                            with col1:
+                                st.write("**Subject:** {}".format(material['subject']))
+                                st.write("**Uploaded:** {}".format(material['upload_date']))
+                                if material['description']:
+                                    st.write("**Description:**")
+                                    st.info(material['description'])
+                            
+                            with col2:
+                                # Download button
+                                if material['file_path'] and os.path.exists(material['file_path']):
+                                    with open(material['file_path'], "rb") as f:
+                                        st.download_button(
+                                            "📥 Download",
+                                            f,
+                                            file_name=os.path.basename(material['file_path']),
+                                            key="student_download_{}".format(material['id']),
+                                            use_container_width=True,
+                                            type="primary"
+                                        )
+                                else:
+                                    st.error("File not found")
+                    
+                    st.divider()
 
+    # ================= RESULTS =================
+    with tabs[2]:  # ← Changed from tabs[1] to tabs[2]
+        
         results = pd.read_sql_query("""
         SELECT assignments.title, submissions.marks
         FROM submissions
