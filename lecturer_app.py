@@ -544,18 +544,55 @@ if role == "lecturer":
                                             
 
     # ANALYTICS
-    with tabs[4]:
-        df = pd.read_sql_query("""
-        SELECT assignments.title, submissions.marks
-        FROM submissions
-        JOIN assignments ON submissions.assignment_id=assignments.id
-        """, conn)
+with tabs[4]:
+    
+    st.subheader("📈 Performance Analytics")
+    
+    sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+    
+    if not sems.empty:
+        selected_sem = st.selectbox("Select Semester", ["All"] + sems["name"].tolist(), key="analytics_sem")
+        
+        if selected_sem == "All":
+            df = pd.read_sql_query("""
+            SELECT assignments.title, submissions.marks, subjects.name as subject
+            FROM submissions
+            JOIN assignments ON submissions.assignment_id=assignments.id
+            JOIN subjects ON assignments.subject_id = subjects.id
+            WHERE submissions.marks IS NOT NULL AND submissions.marks != ''
+            """, conn)
+        else:
+            sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
+            df = pd.read_sql_query("""
+            SELECT assignments.title, submissions.marks, subjects.name as subject
+            FROM submissions
+            JOIN assignments ON submissions.assignment_id=assignments.id
+            JOIN subjects ON assignments.subject_id = subjects.id
+            JOIN semesters ON subjects.semester_id = semesters.id
+            WHERE semesters.id = ? AND submissions.marks IS NOT NULL AND submissions.marks != ''
+            """, conn, params=(sem_id,))
 
         if not df.empty:
             df["marks"] = pd.to_numeric(df["marks"], errors="coerce")
-            st.bar_chart(df.groupby("title")["marks"].mean())
+            
+            st.subheader("Average Marks by Assignment")
+            avg_marks = df.groupby("title")["marks"].mean()
+            st.bar_chart(avg_marks)
+            
+            st.divider()
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Submissions", len(df))
+            with col2:
+                st.metric("Average Score", f"{df['marks'].mean():.2f}/10")
+            with col3:
+                st.metric("Highest Score", f"{df['marks'].max()}/10")
+            
+            st.divider()
+            st.dataframe(df, use_container_width=True, hide_index=True)
         else:
-            st.info("No graded submissions yet.")
+            st.info("📭 No graded submissions yet for this semester.")
 
     # MANAGE STUDENTS
     with tabs[5]:
