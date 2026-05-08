@@ -510,7 +510,9 @@ if role == "lecturer":
         "Submissions & AI",
         "Analytics",
         "Manage Students",
-        "Study Materilas"
+        "Study Materials",
+        Storage Management"
+        
     ])
         # DASHBOARD
     with tabs[0]:
@@ -678,24 +680,94 @@ if role == "lecturer":
                 list(semester_options.keys()),
                 key="delete_semester"
             )
-            if st.button("Delete Selected Semester"):
+                        if st.button("Delete Selected Semester"):
 
                 sem_id = semester_options[selected_sem]
-                subject_ids=pd.read_sql_query(
-                    "SELECT id FROM subjects WHERE semester_id=?",
-                    conn,
-                    params=(int(sem_id),)
-                )
-                for _, row in subject_ids.iterrows():
-                    c.execute("DELETE FROM assignments WHERE subject_id=?", (row["id"],)) 
-                c.execute("DELETE FROM subjects WHERE semester_id=?", (sem_id,))
-                c.execute("UPDATE users SET semester_id=NULL WHERE semester_id=?", (sem_id,))
-                c.execute("DELETE FROM semesters WHERE id=?", (sem_id,))
-
-                conn.commit()
-                st.success("✅ Semester deleted successfully.")
-                st.rerun()
-
+                
+                try:
+                    deleted_files = 0
+                    
+                    # Step 1: Get all subjects in this semester
+                    subject_ids = pd.read_sql_query(
+                        "SELECT id FROM subjects WHERE semester_id=?",
+                        conn,
+                        params=(int(sem_id),)
+                    )
+                    
+                    # Step 2: For each subject, delete all related files
+                    for _, subject_row in subject_ids.iterrows():
+                        
+                        # Get all assignments for this subject
+                        assignments = pd.read_sql_query(
+                            "SELECT id, question_file FROM assignments WHERE subject_id=?",
+                            conn,
+                            params=(subject_row["id"],)
+                        )
+                        
+                        # For each assignment
+                        for _, assign_row in assignments.iterrows():
+                            
+                            # Delete all submission files
+                            submissions = pd.read_sql_query(
+                                "SELECT submission_file FROM submissions WHERE assignment_id=?",
+                                conn,
+                                params=(assign_row["id"],)
+                            )
+                            
+                            for _, sub_row in submissions.iterrows():
+                                if sub_row['submission_file'] and os.path.exists(sub_row['submission_file']):
+                                    try:
+                                        os.remove(sub_row['submission_file'])
+                                        deleted_files += 1
+                                    except:
+                                        pass
+                            
+                            # Delete all submissions (database)
+                            c.execute("DELETE FROM submissions WHERE assignment_id=?", (assign_row["id"],))
+                            
+                            # Delete assignment question file
+                            if assign_row['question_file'] and os.path.exists(assign_row['question_file']):
+                                try:
+                                    os.remove(assign_row['question_file'])
+                                    deleted_files += 1
+                                except:
+                                    pass
+                        
+                        # Delete all assignments for this subject
+                        c.execute("DELETE FROM assignments WHERE subject_id=?", (subject_row["id"],))
+                        
+                        # Delete all study materials for this subject
+                        materials = pd.read_sql_query(
+                            "SELECT file_path FROM study_materials WHERE subject_id=?",
+                            conn,
+                            params=(subject_row["id"],)
+                        )
+                        
+                        for _, mat_row in materials.iterrows():
+                            if mat_row['file_path'] and os.path.exists(mat_row['file_path']):
+                                try:
+                                    os.remove(mat_row['file_path'])
+                                    deleted_files += 1
+                                except:
+                                    pass
+                        
+                        c.execute("DELETE FROM study_materials WHERE subject_id=?", (subject_row["id"],))
+                    
+                    # Step 3: Delete all subjects
+                    c.execute("DELETE FROM subjects WHERE semester_id=?", (sem_id,))
+                    
+                    # Step 4: Update students (set semester_id to NULL)
+                    c.execute("UPDATE users SET semester_id=NULL WHERE semester_id=?", (sem_id,))
+                    
+                    # Step 5: Delete semester
+                    c.execute("DELETE FROM semesters WHERE id=?", (sem_id,))
+                    
+                    conn.commit()
+                    st.success("✅ Semester deleted! Removed {} files from disk.".format(deleted_files))
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error("Error deleting semester: {}".format(str(e)))
         # SUBJECTS
     with tabs[2]:  # Adjust index based on your setup
         
@@ -1406,157 +1478,7 @@ if role == "lecturer":
                     st.info("No data available to generate the status board.")
         else:
             st.warning("⚠️ Please create semesters first.")
-        # ANALYTICS
-   # with tabs[5]:  # Adjust index if needed
         
-    #    st.title("📈 Performance Analytics")
-        
-     #   st.subheader("📊 Grade Statistics")
-        
-      #  sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
-        
-       # if not sems.empty:
-        #    selected_sem = st.selectbox("Select Semester", ["All"] + sems["name"].tolist(), key="analytics_sem")
-            
-         #   if selected_sem == "All":
-          #      df = pd.read_sql_query("""
-           #     SELECT 
-            #        semesters.name as Semester,
-             #       subjects.name as Subject,
-              #      assignments.title as Assignment,
-               #     users.full_name as Student_Name,
-                #    users.username as Username,
-                 #   submissions.submission_time as Submission_Date,
-                  #  assignments.deadline as Deadline,
-                   # submissions.marks as Marks,
-                    #submissions.ai_summary as AI_Feedback
-                #FROM submissions
-                #JOIN assignments ON submissions.assignment_id=assignments.id
-                #JOIN subjects ON assignments.subject_id = subjects.id
-                #JOIN semesters ON subjects.semester_id = semesters.id
-                #JOIN users ON submissions.student_id = users.id
-                #WHERE submissions.marks IS NOT NULL AND submissions.marks != ''
-                #ORDER BY semesters.name, subjects.name, assignments.title, users.full_name
-                #""", conn)
-            #else:
-             #   sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
-              #  df = pd.read_sql_query("""
-               # SELECT 
-                #    semesters.name as Semester,
-                 #   subjects.name as Subject,
-                  #  assignments.title as Assignment,
-                   # users.full_name as Student_Name,
-                    #users.username as Username,
-                    #submissions.submission_time as Submission_Date,
-                    #assignments.deadline as Deadline,
-                    #submissions.marks as Marks,
-                    #submissions.ai_summary as AI_Feedback
-                #FROM submissions
-                #JOIN assignments ON submissions.assignment_id=assignments.id
-                #JOIN subjects ON assignments.subject_id = subjects.id
-                #JOIN semesters ON subjects.semester_id = semesters.id
-                #JOIN users ON submissions.student_id = users.id
-                #WHERE semesters.id = ? AND submissions.marks IS NOT NULL AND submissions.marks != ''
-                #ORDER BY subjects.name, assignments.title, users.full_name
-                #""", conn, params=(sem_id,))
-
-            #if not df.empty:
-             #   df["marks"] = pd.to_numeric(df["Marks"], errors="coerce")
-              #  
-               # # ========== DOWNLOAD OPTIONS ==========
-                #st.subheader("📥 Download Grade Reports")
-                #
-                #col1, col2, col3 = st.columns(3)
-                
-                # Option 1: Detailed Report (with feedback)
-                #with col1:
-                 #   csv_detailed = df.to_csv(index=False).encode('utf-8')
-                  #  st.download_button(
-                   #     label="📄 Detailed Report (with AI Feedback)",
-                    #    data=csv_detailed,
-                     #   file_name="Grades_Detailed_{}.csv".format(selected_sem),
-                      #  mime='text/csv',
-                       # use_container_width=True
-                    #)
-                
-                # Option 2: Summary Report (without feedback)
-                #with col2:
-                 #   df_summary = df[['Semester', 'Subject', 'Assignment', 'Student_Name', 'Username', 'Submission_Date', 'Deadline', 'Marks']]
-                  #  csv_summary = df_summary.to_csv(index=False).encode('utf-8')
-                   # st.download_button(
-                    #    label="📊 Summary Report (No Feedback)",
-                     #   data=csv_summary,
-                      #  file_name="Grades_Summary_{}.csv".format(selected_sem),
-                       # mime='text/csv',
-                        #use_container_width=True
-                    #)
-                
-                ## Option 3: Student-wise Aggregated Report
-                #with col3:
-                 #   # Create pivot table: Students x Assignments
-                  #  df_pivot = df.pivot_table(
-                   #     index=['Semester', 'Student_Name', 'Username', 'Subject'],
-                    #    columns='Assignment',
-                     #   values='marks',
-                      #  aggfunc='first'
-                    #).reset_index()
-                    
-                    # Add average column
-                    #assignment_cols = [col for col in df_pivot.columns if col not in ['Semester', 'Student_Name', 'Username', 'Subject']]
-                    #df_pivot['Average'] = df_pivot[assignment_cols].mean(axis=1).round(2)
-                    
-                   # csv_pivot = df_pivot.to_csv(index=False).encode('utf-8')
-                    #st.download_button(
-                     #   label="📈 Student-wise Summary",
-                      #  data=csv_pivot,
-                       # file_name="Grades_StudentWise_{}.csv".format(selected_sem),
-                        #mime='text/csv',
-                        #use_container_width=True
-                    #)
-                
-               # st.divider()
-                
-                # ========== VISUALIZATIONS ==========
-                #st.subheader("📊 Average Marks by Assignment")
-                #avg_marks = df.groupby("Assignment")["marks"].mean()
-                #st.bar_chart(avg_marks)
-                
-                #st.divider()
-                
-                # Metrics
-                #col1, col2, col3 = st.columns(3)
-                #with col1:
-                 #   st.metric("Total Submissions", len(df))
-                #with col2:
-                 #   st.metric("Average Score", "{:.2f}/10".format(df['marks'].mean()))
-                #with col3:
-                 #   st.metric("Highest Score", "{}/10".format(df['marks'].max()))
-                
-                #st.divider()
-                
-                ## ========== SUBJECT-WISE BREAKDOWN ==========
-                #st.subheader("📚 Subject-wise Performance")
-                
-                #subject_stats = df.groupby('Subject').agg({
-                 #   'marks': ['count', 'mean', 'min', 'max']
-                #}).round(2)
-                #subject_stats.columns = ['Total Submissions', 'Average', 'Lowest', 'Highest']
-                #st.dataframe(subject_stats, use_container_width=True)
-                
-                #st.divider()
-                
-                # ========== RAW DATA TABLE ==========
-                #st.subheader("📋 Detailed Grade Table")
-                #st.dataframe(
-                 #   df[['Semester', 'Subject', 'Assignment', 'Student_Name', 'Username', 'Marks']],
-                  #  use_container_width=True,
-                   # hide_index=True
-                #)
-                
-            #else:
-             #   st.info("📭 No graded submissions yet for this semester.")
-        #else:
-         #   st.warning("⚠️ Please create semesters first.")
 
     # MANAGE STUDENTS
     with tabs[6]:
@@ -1789,18 +1711,37 @@ if role == "lecturer":
 
             col_del1, col_del2 = st.columns([1, 3])
             
-            with col_del1:
+                        with col_del1:
                 if st.button("🗑️ Confirm Delete", type="primary", use_container_width=True):
                     student_id = student_options[selected_student]
                     
                     try:
-                        # Delete submissions first (foreign key constraint)
+                        # Get all submission files for this student
+                        submission_files = pd.read_sql_query(
+                            "SELECT submission_file FROM submissions WHERE student_id=?",
+                            conn,
+                            params=(int(student_id),)
+                        )
+                        
+                        # Delete all submission files
+                        deleted_files = 0
+                        for _, row in submission_files.iterrows():
+                            if row['submission_file'] and os.path.exists(row['submission_file']):
+                                try:
+                                    os.remove(row['submission_file'])
+                                    deleted_files += 1
+                                except:
+                                    pass
+                        
+                        # Delete submissions from database
                         c.execute("DELETE FROM submissions WHERE student_id=?", (int(student_id),))
-                        # Then delete user
+                        
+                        # Delete user
                         c.execute("DELETE FROM users WHERE id=?", (int(student_id),))
+                        
                         conn.commit()
                         
-                        st.success("✅ Student removed successfully!")
+                        st.success("✅ Student removed! Deleted {} submission files.".format(deleted_files))
                         st.rerun()
                         
                     except Exception as e:
@@ -2077,6 +2018,192 @@ if role == "lecturer":
                                     st.rerun()
                                 except Exception as e:
                                     st.error("Error deleting: {}".format(str(e)))
+        # STORAGE MANAGEMENT
+    with tabs[8]:
+        
+        st.title("💾 Storage & File Management")
+        st.markdown("---")
+        st.markdown("""
+        <div style='background-color: #f0f8ff; padding: 15px; border-radius: 10px; border-left: 4px solid #004b87;'>
+            <h4 style='color: #004b87; margin-top: 0;'>🌊 The N-Streamlines Storage Monitor</h4>
+            <p style='color: #555; margin-bottom: 0;'>Keep your platform clean and optimized</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.divider()
+        
+        # Get storage stats
+        stats = get_storage_stats()
+        
+        # ========== STORAGE USAGE OVERVIEW ==========
+        st.subheader("📊 Current Storage Usage")
+        
+        if stats:
+            cols = st.columns(len(stats))
+            
+            total_size = 0
+            total_files = 0
+            
+            for idx, (label, data) in enumerate(stats.items()):
+                with cols[idx]:
+                    st.metric(
+                        label,
+                        "{} MB".format(data['size_mb']),
+                        "{} files".format(data['file_count'])
+                    )
+                    total_size += data['size_mb']
+                    total_files += data['file_count']
+            
+            st.divider()
+            
+            col_total1, col_total2, col_total3 = st.columns(3)
+            
+            with col_total1:
+                st.metric("📦 Total Platform Storage", "{} MB".format(round(total_size, 2)))
+            
+            with col_total2:
+                st.metric("📄 Total Files", total_files)
+            
+            with col_total3:
+                # Estimate GitHub limit (1GB = 1024 MB)
+                percent_used = (total_size / 1024) * 100
+                st.metric("GitHub Repo Usage", "{}%".format(round(percent_used, 1)))
+            
+            # Warning if approaching limit
+            if percent_used > 80:
+                st.error("⚠️ **Critical:** Approaching GitHub 1GB storage limit! Run cleanup immediately.")
+            elif percent_used > 50:
+                st.warning("⚠️ **Warning:** Using over 50% of recommended storage. Consider cleanup.")
+        
+        else:
+            st.info("No storage data available yet.")
+        
+        st.divider()
+        
+        # ========== ORPHANED FILE CLEANUP ==========
+        st.subheader("🧹 Automatic File Cleanup")
+        
+        st.markdown("""
+        <div style='background-color: #fff4e6; padding: 12px; border-radius: 8px; border-left: 3px solid #ff9800;'>
+            <p style='margin: 0; color: #e65100;'>
+                <strong>⚠️ What are orphaned files?</strong><br>
+                Files that exist on disk but are no longer referenced in the database 
+                (e.g., from deleted assignments, students, or semesters).
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.write("")
+        
+        col_cleanup1, col_cleanup2 = st.columns([1, 2])
+        
+        with col_cleanup1:
+            if st.button("🧹 Scan & Clean Orphaned Files", type="primary", use_container_width=True):
+                
+                with st.spinner("🔍 Scanning for orphaned files..."):
+                    deleted, space_freed = cleanup_orphaned_files()
+                
+                if deleted > 0:
+                    st.success("✅ **Cleanup Complete!**")
+                    st.write("- **Files Deleted:** {}".format(deleted))
+                    st.write("- **Space Freed:** {} MB".format(space_freed))
+                    st.balloons()
+                    st.rerun()
+                else:
+                    st.info("✨ **Platform is clean!** No orphaned files found.")
+        
+        with col_cleanup2:
+            st.info("""
+            **Safe Operation:**
+            - Only removes files NOT in database
+            - Does NOT delete active assignments/submissions
+            - Recommended: Run monthly
+            """)
+        
+        st.divider()
+        
+        # ========== FILE BROWSER ==========
+        st.subheader("📁 File Browser & Inspector")
+        
+        folder = st.selectbox("Select Folder to Inspect", [
+            "assignment_files",
+            "submission_files", 
+            "study_materials",
+            "data"
+        ])
+        
+        if os.path.exists(folder):
+            files = []
+            for filename in os.listdir(folder):
+                file_path = os.path.join(folder, filename)
+                if os.path.isfile(file_path):
+                    try:
+                        size_mb = round(os.path.getsize(file_path) / (1024 * 1024), 2)
+                        # Get file modification time
+                        mod_time = datetime.fromtimestamp(os.path.getmtime(file_path)).strftime('%Y-%m-%d %H:%M')
+                        
+                        files.append({
+                            'Filename': filename,
+                            'Size (MB)': size_mb,
+                            'Modified': mod_time,
+                            'Path': file_path
+                        })
+                    except:
+                        continue
+            
+            if files:
+                df_files = pd.DataFrame(files)
+                # Sort by size (largest first)
+                df_files = df_files.sort_values('Size (MB)', ascending=False)
+                
+                st.dataframe(
+                    df_files[['Filename', 'Size (MB)', 'Modified']], 
+                    use_container_width=True, 
+                    hide_index=True
+                )
+                
+                col_info1, col_info2 = st.columns(2)
+                
+                with col_info1:
+                    st.info("📊 **Total Files:** {}".format(len(files)))
+                
+                with col_info2:
+                    total_folder_size = sum([f['Size (MB)'] for f in files])
+                    st.info("💾 **Folder Size:** {} MB".format(round(total_folder_size, 2)))
+                
+                # Show largest files
+                if len(files) > 5:
+                    st.write("**🔝 Top 5 Largest Files:**")
+                    top_5 = df_files.head(5)[['Filename', 'Size (MB)']]
+                    st.dataframe(top_5, use_container_width=True, hide_index=True)
+            
+            else:
+                st.info("📭 No files in this folder")
+        else:
+            st.warning("⚠️ Folder does not exist yet")
+        
+        st.divider()
+        
+        # ========== QUICK STATS ==========
+        st.subheader("📈 Platform Statistics")
+        
+        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+        
+        with col_stat1:
+            semester_count = pd.read_sql_query("SELECT COUNT(*) as count FROM semesters", conn).iloc[0]['count']
+            st.metric("🎓 Semesters", semester_count)
+        
+        with col_stat2:
+            student_count = pd.read_sql_query("SELECT COUNT(*) as count FROM users WHERE role='student'", conn).iloc[0]['count']
+            st.metric("👥 Students", student_count)
+        
+        with col_stat3:
+            assignment_count = pd.read_sql_query("SELECT COUNT(*) as count FROM assignments", conn).iloc[0]['count']
+            st.metric("📝 Assignments", assignment_count)
+        
+        with col_stat4:
+            submission_count = pd.read_sql_query("SELECT COUNT(*) as count FROM submissions", conn).iloc[0]['count']
+            st.metric("📤 Submissions", submission_count)
 # ==========================================================
 # ===================== STUDENT =============================
 # ==========================================================
@@ -2347,106 +2474,7 @@ elif role == "student":
                                 st.success("✅ Assignment submitted successfully!")
                                 st.balloons()
                                 st.rerun()
-                #with st.expander(expander_title):=======================================================================
-
-                    # DOWNLOAD ASSIGNMENT FILE
-                   # if row["question_file"] and os.path.exists(row["question_file"]):
-                    #    with open(row["question_file"], "rb") as f:
-                     #       st.download_button(
-                      #          "📥 Download Assignment Question",
-                       #         f,
-                        #        file_name=os.path.basename(row["question_file"]),
-                         #       key="download_q_{}".format(row['id'])
-                          #  )
-                    #else:
-                     #   st.info("No assignment file attached by lecturer.")
-
-                    #st.divider()
-
-                    # CHECK IF ALREADY SUBMITTED
-                    #if not existing_submission.empty:
-                     #   st.success("✅ You have already submitted this assignment.")
-
-                      #  submission_time = existing_submission.iloc[0]["submission_time"]
-                       # st.write("**Submitted on:** {}".format(submission_time))
-
-                        # Show marks if graded
-                        #marks = existing_submission.iloc[0]["marks"]
-                        #if marks and str(marks).strip():
-                         #   st.metric("🎯 Marks Awarded", str(marks) + "/10")
-                        #else:
-                         #   st.info("⏳ Not graded yet")
-
-                        # Allow download of submitted file
-                        #submitted_file = existing_submission.iloc[0]["submission_file"]
-                        #if submitted_file and os.path.exists(submitted_file):
-                         #   with open(submitted_file, "rb") as f:
-                          #      st.download_button(
-                           #         "📥 Download My Submission",
-                           #         f,
-                            #        file_name=os.path.basename(submitted_file),
-                             #       key="download_sub_{}".format(row['id'])
-                              #  )
-
-                    #else:
-                        # Show deadline warning
-                     #   days, status, color = get_deadline_status(row['deadline'])
-                      #  
-                       # if status == "Overdue":
-                        #    st.error("🔴 **This assignment is OVERDUE by {} days!**".format(abs(days)))
-                       # elif status == "Due Today":
-                        #    st.warning("🟠 **This assignment is DUE TODAY!**")
-                        #elif status == "Due Soon":
-                         #   st.info("🟡 **Only {} days left to submit!**".format(days))
-                        
-                        # UPLOAD NEW SUBMISSION
-                        #uploaded = st.file_uploader(
-                         #   "📤 Upload Your Answer PDF",
-                          #  type=["pdf"],
-                           # key="upload_{}".format(row['id'])
-                        #)
-
-                        #if st.button("Submit Assignment", key="submit_{}".format(row['id']), type="primary"):
-
-                         #   if not uploaded:
-                          #      st.warning("⚠️ Please upload a PDF file before submitting.")
-                           # else:
-                            #    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                             #   file_path = "submission_files/" + str(st.session_state.username) + "_" + str(row['id']) + "_" + timestamp + ".pdf"
-
-                              #  with open(file_path, "wb") as f:
-                               #     f.write(uploaded.getbuffer())
-
-                                #c.execute("""
-                                #INSERT INTO submissions(
-                                 #   assignment_id,
-                                  #  student_id,
-                                   # submission_time,
-                                    #submission_file,
-                                    #marks,
-                                    #ai_summary
-                                #)
-                                #VALUES(?,?,?,?,?,?)
-                                #""", (
-                                 #   int(row["id"]),
-                                  #  int(st.session_state.user_id),
-                                   # str(datetime.now()),
-                                    #file_path,
-                                    #"",
-                                    #""
-                                #)#)
-
-                                #conn.commit()
-                                
-                                # Check if submitted on time
-                                #if days >= 0:
-                                 #   st.success("✅ Assignment submitted successfully on time!")
-                                #else:
-                                 #   st.warning("⚠️ Assignment submitted {} days late.".format(abs(days)))
-                                
-                                #st.balloons()
-                                #st.rerun()
-
+               
         # ================= STUDY MATERIALS =================
     with tabs[1]:
         
