@@ -1206,7 +1206,7 @@ if role == "lecturer":
                 title = st.text_input("Assignment Title", placeholder="e.g., Design of RCC Beam")
                 deadline = st.date_input("Deadline")
             
-                    file = st.file_uploader("📎 Upload Assignment Question PDF (Optional)", type=["pdf"])
+                file = st.file_uploader("📎 Upload Assignment Question PDF (Optional)", type=["pdf"])
 
             if st.button("➕ Create Assignment", use_container_width=True, type="primary"):
 
