@@ -9,6 +9,8 @@ from pdf2image import convert_from_path
 import io
 import base64
 import bcrypt
+from PIL import Image
+import google.generativeai as genai
 
 # ================= CONFIG =================
 
@@ -169,7 +171,18 @@ role = st.session_state.role
 
 def vision_grade(pdf_path, rubric):
     try:
+        import google.generativeai as genai
+        from PIL import Image
+        
+        #CONFIGURE WITH api KEY
+        genai.configure(api_key=os.getenv(""GEMINI_API_KEY"))
+
+        #CONVERT pdf TO IMAGES
         images = convert_from_path(pdf_path)
+
+        #Use Gemini Flash Model
+        model=genai.GenerativeModel('gemini-1.5-flash')
+
         #prepare the text prompt
         prompt = """
 You are a strict civil engineering professor.
@@ -177,41 +190,33 @@ You are a strict civil engineering professor.
 MODEL ANSWER/Rubric:
 {}
 
-please grade the submitted assignment shown in the images.
+#please grade the submitted assignment shown in the images.
 
-Return your response in EXACTLY this format:
+Grade the assignment and Return your response in EXACTLY this format:
 FINAL_MARKS: X/10
 FEEDBACK:
 - Point 1
 - Point 2
 - Point #
-""".format(rubric)
+Now grade the assignment shown the images below:""".format(rubric)
 
-        #create parts list with text first
-        parts = [prompt]
+        #Prepare content-text first, then PIL images directly
+        content_parts = [prompt]
 
         #ADD images (limit to first 5 pages to avoid token limits)
-        for img in images[:5]:
-            buffer = io.BytesIO()
-            img.save(buffer, format="PNG")
-            img_bytes = buffer.getvalue()
-
-            #Add image as base64
-            parts.append({
-                "mime_type": "image/png",
-                "data": base64.b64encode(img_bytes).decode()
+        for idx,img in enumerate(images[:5]):
+            content_parts.append(img)
+        #Generate Response
+        response = model.generate_content(content_parts)
+        if response and hasattr(response, 'text'):
+            return response.text
+        else:
+            return "Error: AI returned empty response"
             
-            })
-
-        #Use the correct model name for the new API
-        response = client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=parts
-        )
-
-        return response.text
     except Exception as e:
-        return "Error during grading:{}".format(str(e))
+        import traceback
+        error_details = traceback.format_exc()
+        return "Error: {}\n\nDetails:\n{}".format(str(e), error_details)
 
 def extract_marks(text):
     """
@@ -235,7 +240,7 @@ def extract_marks(text):
     for pattern in patterns:
         m = re.search(patter, text, re.IGNORECASE)
         
-        if m:
+        if match:
             try:
                 marks = int(m.group(1))
                 #Ensure marks are within valid range
