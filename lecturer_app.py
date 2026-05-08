@@ -2264,12 +2264,11 @@ elif role == "student":
                                     st.error("File not found")
                     
                     st.divider()
-    # ================= RESULTS (WITH MISSING/OVERDUE LOGIC) =================
+    # ================= RESULTS (ACCOUNTABILITY MODE) =================
     with tabs[2]:
         st.subheader("📝 My Academic Performance Record")
 
-        # We query ALL assignments for the student's semester 
-        # and LEFT JOIN with submissions to see what's missing
+        # JOIN assignments first to ensure we see EVERY task, even those NOT submitted
         query = """
         SELECT 
             subjects.name as Subject, 
@@ -2278,7 +2277,7 @@ elif role == "student":
             submissions.marks as Marks,
             submissions.submission_time as Submitted_On
         FROM assignments
-        JOIN subjects ON assignments.subject_id = subjects.id
+        INNER JOIN subjects ON assignments.subject_id = subjects.id
         LEFT JOIN submissions ON assignments.id = submissions.assignment_id AND submissions.student_id = ?
         WHERE subjects.semester_id = ?
         ORDER BY assignments.deadline DESC
@@ -2286,38 +2285,43 @@ elif role == "student":
 
         try:
             student_id = int(st.session_state.user_id)
-            # We already have sem_id from the Assignments tab logic earlier in the script
+            # Use the sem_id we calculated at the start of the student section
             results_df = pd.read_sql_query(query, conn, params=(student_id, sem_id))
 
             if results_df.empty:
-                st.info("No assignments have been posted for your semester yet.")
+                st.info("📭 No assignments have been posted for your semester yet.")
             else:
-                # Process the dataframe to handle missed assignments
                 display_data = []
                 current_date = datetime.now().date()
 
                 for _, row in results_df.iterrows():
-                    deadline_date = datetime.strptime(row['Deadline'], '%Y-%m-%d').date()
+                    # Parse deadline
+                    deadline_date = datetime.strptime(str(row['Deadline']), '%Y-%m-%d').date()
                     
                     status = ""
                     score = ""
                     
+                    # --- PRIORITY LOGIC ---
+                    
+                    # 1. Check if actually graded
                     if row['Marks'] is not None and str(row['Marks']).strip() != "":
-                        # Case 1: Graded
                         status = "✅ Graded"
                         score = f"{row['Marks']}/10"
+                    
+                    # 2. Check if submitted but not graded yet
                     elif row['Submitted_On'] is not None:
-                        # Case 2: Submitted but not graded
                         status = "⏳ Pending Grade"
-                        score = "N/A"
+                        score = "Processing"
+
+                    # 3. Check if MISSED (No submission + Deadline passed)
                     elif current_date > deadline_date:
-                        # Case 3: Not submitted and Deadline passed
-                        status = "❌ MISSED (Overdue)"
-                        score = "0/10"
+                        status = "❌ MISSED (Negligence)"
+                        score = "0/10" # Forced zero for overdue non-submissions
+                    
+                    # 4. Not submitted but still has time
                     else:
-                        # Case 4: Not submitted but still has time
-                        status = "📖 Not Submitted Yet"
-                        score = "Pending"
+                        status = "📖 Open for Submission"
+                        score = "TBD"
 
                     display_data.append({
                         "Subject": row['Subject'],
@@ -2327,24 +2331,24 @@ elif role == "student":
                         "Marks": score
                     })
 
-                # Create a clean display dataframe
+                # Create final dataframe
                 final_df = pd.DataFrame(display_data)
                 
-                # Apply styling/colors for the status
+                # Display to student
                 st.dataframe(
                     final_df, 
                     use_container_width=True, 
                     hide_index=True
                 )
                 
-                # Add a small warning if there are missed assignments
-                missed_count = len(final_df[final_df['Status'] == "❌ MISSED (Overdue)"])
-                if missed_count > 0:
-                    st.warning(f"⚠️ You have **{missed_count}** missed assignment(s). These are recorded as 0 until you contact your lecturer.")
-
+                # Accountability Summary
+                missed = len(final_df[final_df['Status'] == "❌ MISSED (Negligence)"])
+                if missed > 0:
+                    st.error(f"⚠️ You have **{missed}** missed assignment(s). A score of **0/10** has been recorded.")
+                
         except Exception as e:
-            st.error("Error loading results. Please contact administration.")
-            # st.write(e) # Debug
+            st.error("⚠️ System error loading results. Please contact Er. Nirajan Katuwal.")
+            # st.write(e) # Uncomment for debugging
     # ================= RESULTS =================
     #with tabs[2]:
      #   st.subheader("📝 My Graded Results")
