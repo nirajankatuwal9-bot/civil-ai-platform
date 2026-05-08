@@ -168,39 +168,69 @@ role = st.session_state.role
 # ================= AI FUNCTIONS =================
 
 def vision_grade(pdf_path, rubric):
-    images = convert_from_path(pdf_path)
-    parts = [{"text": f"""
+    try:
+        images = convert_from_path(pdf_path)
+        #prepare the text prompt
+        prompt = """
 You are a strict civil engineering professor.
 
-MODEL ANSWER:
-{rubric}
+MODEL ANSWER/Rubric:
+{}
 
-Return exactly:
+please grade the submitted assignment shown in the images.
+
+Return your response in EXACTLY this format:
 FINAL_MARKS: X/10
 FEEDBACK:
-- bullet points
-"""}]
+- Point 1
+- Point 2
+- Point #
+""".format(rubric)
 
-    for img in images[:3]:
-        buffer = io.BytesIO()
-        img.save(buffer, format="PNG")
-        parts.append({
-            "inline_data": {
+        #create parts list with text first
+        parts = [prompt]
+
+        #ADD images (limit to first 5 pages to avoid token limits)
+        for img in images[:5]:
+            buffer = io.BytesIO()
+            img.save(buffer, format="PNG")
+            img_bytes = buffer.getvalue()
+
+            #Add image as base64
+            parts.append({
                 "mime_type": "image/png",
-                "data": base64.b64encode(buffer.getvalue()).decode()
-            }
-        })
+                "data": base64.b64encode(img_bytes).decode()
+            
+            })
 
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=[{"role": "user", "parts": parts}]
-    )
+        #Use the correct model name for the new API
+        response = client.models.generate_content(
+            model="gemini-1.5-flash-002",
+            contents=parts
+        )
 
-    return response.text
+        return response.text
+    except Exception as e:
+        return "Error during grading:{}".format(str(e))
 
 def extract_marks(text):
-    m = re.search(r"FINAL_MARKS:\s*(\d+)/10", text)
-    return int(m.group(1)) if m else None
+    #Try multiple patterns to extract marks 
+    patterns = [
+        r"FINAL_MARKS:\s*(|d+)/10",
+        r"FINAL MARKS:\s*(\d+)/10",
+        r"Marks:\s*(\d+)/10",
+        r"Score:\s*(\d+)/10",
+        r"(\d+)\s*/\s*10"
+    ]
+
+    for pattern in patterns:
+        m = re.search(r"FINAL_MARKS:\s*(\d+)/10", text)
+        if m:
+            marks = int(m.group(1))
+            #Ensure marks are within valid range
+            return min(max(marks,0),10)
+    return none
+    
 
 # ==========================================================
 # ===================== LECTURER ============================
