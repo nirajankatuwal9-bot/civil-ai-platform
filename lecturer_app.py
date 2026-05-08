@@ -205,7 +205,7 @@ FEEDBACK:
 
         #Use the correct model name for the new API
         response = client.models.generate_content(
-            model="gemini-1.5-flash-002",
+            model="gemini-1.5-flash",
             contents=parts
         )
 
