@@ -608,22 +608,29 @@ if role == "lecturer":
                 st.success("✅ Semester deleted successfully.")
                 st.rerun()
 
-    # SUBJECTS
-    with tabs[2]:
+        # SUBJECTS
+    with tabs[2]:  # Adjust index based on your setup
+        
+        st.title("📚 Subject Management")
         
         sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
 
         if sems.empty:
             st.warning("Please create a semester first.")
         else:
-            sem = st.selectbox("Semester", sems["name"], key="subject_semester")
-            sem_id = int(sems[sems["name"] == sem]["id"].values[0])
-
-            st.write("DEBUG selected semester id:", sem_id)
+            # ========== ADD SUBJECT ==========
+            st.subheader("➕ Add New Subject")
             
-            sub = st.text_input("Subject Name", key="subject_name")
+            col1, col2 = st.columns([1, 2])
             
-            if st.button("Add Subject"):
+            with col1:
+                sem = st.selectbox("Select Semester", sems["name"], key="subject_semester")
+                sem_id = int(sems[sems["name"] == sem]["id"].values[0])
+            
+            with col2:
+                sub = st.text_input("Subject Name", key="subject_name", placeholder="e.g., Structural Analysis")
+            
+            if st.button("➕ Add Subject", use_container_width=True):
                 if not sub.strip():
                     st.error("Subject name cannot be empty.")
                 else:
@@ -633,111 +640,335 @@ if role == "lecturer":
                             (sub.strip(), int(sem_id))
                         )
                         conn.commit()
-                        st.success("Added")
+                        st.success("✅ Subject '{}' added to {}".format(sub.strip(), sem))
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error adding subject: {e}")
+                        st.error("Error adding subject: {}".format(str(e)))
+            
             st.divider()
-            st.subheader("Subjects for Selected Semester")
+            
+            # ========== VIEW SUBJECTS ==========
+            st.subheader("📋 Subjects for: {}".format(sem))
+            
             subjects_for_sem = pd.read_sql_query(
-                "SELECT * FROM subjects WHERE semester_id=?",
+                "SELECT * FROM subjects WHERE semester_id=? ORDER BY name ASC",
                 conn,
                 params=(int(sem_id),)
             )
+            
+            if subjects_for_sem.empty:
+                st.info("No subjects found for this semester.")
+            else:
+                st.dataframe(
+                    subjects_for_sem[['id', 'name']],
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "id": "Subject ID",
+                        "name": "Subject Name"
+                    }
+                )
                 
-            st.dataframe(
-                pd.read_sql_query(
-                    "SELECT * FROM subjects WHERE semester_id=?",
-                    conn,
-                    params=(sem_id,)
-                ),
-                use_container_width=True,
-                hide_index=True
-            )
+                st.info("📊 Total Subjects: **{}**".format(len(subjects_for_sem)))
+            
             st.divider()
-            st.subheader("All Subjects Debug")
-            all_subjects_debug = pd.read_sql_query("SELECT * FROM subjects", conn)
-            st.dataframe(all_subjects_debug, use_container_width=True, hide_index=True)
+            
+            # ========== DELETE SUBJECT ==========
+            st.subheader("🗑️ Delete Subject")
+            
+            if not subjects_for_sem.empty:
+                
+                # Create options for deletion
+                subject_options = {
+                    "{} (ID: {})".format(row['name'], row['id']): row['id']
+                    for _, row in subjects_for_sem.iterrows()
+                }
+                
+                selected_subject = st.selectbox(
+                    "Select Subject to Delete from {}".format(sem),
+                    list(subject_options.keys()),
+                    key="delete_subject_select"
+                )
+                
+                col_warn1, col_warn2 = st.columns([2, 1])
+                
+                with col_warn1:
+                    st.warning("⚠️ **Warning:** Deleting a subject will also delete:\n- All assignments under this subject\n- All submissions for those assignments")
+                
+                with col_warn2:
+                    if st.button("🗑️ Confirm Delete Subject", type="primary", use_container_width=True):
+                        
+                        subject_id = subject_options[selected_subject]
+                        
+                        try:
+                            # Get all assignment IDs for this subject
+                            assignment_ids = pd.read_sql_query(
+                                "SELECT id FROM assignments WHERE subject_id=?",
+                                conn,
+                                params=(int(subject_id),)
+                            )
+                            
+                            # Delete submissions for each assignment
+                            for _, row in assignment_ids.iterrows():
+                                c.execute("DELETE FROM submissions WHERE assignment_id=?", (row["id"],))
+                            
+                            # Delete all assignments for this subject
+                            c.execute("DELETE FROM assignments WHERE subject_id=?", (int(subject_id),))
+                            
+                            # Delete all study materials for this subject
+                            materials = pd.read_sql_query(
+                                "SELECT file_path FROM study_materials WHERE subject_id=?",
+                                conn,
+                                params=(int(subject_id),)
+                            )
+                            for _, mat in materials.iterrows():
+                                if mat['file_path'] and os.path.exists(mat['file_path']):
+                                    os.remove(mat['file_path'])
+                            
+                            c.execute("DELETE FROM study_materials WHERE subject_id=?", (int(subject_id),))
+                            
+                            # Finally, delete the subject
+                            c.execute("DELETE FROM subjects WHERE id=?", (int(subject_id),))
+                            
+                            conn.commit()
+                            st.success("✅ Subject deleted successfully!")
+                            st.rerun()
+                            
+                        except Exception as e:
+                            st.error("Error deleting subject: {}".format(str(e)))
+            else:
+                st.info("No subjects available to delete in this semester.")
+            
+            st.divider()
+            
+            # ========== ALL SUBJECTS DEBUG ==========
+            with st.expander("🔍 View All Subjects (All Semesters)"):
+                all_subjects_debug = pd.read_sql_query("""
+                SELECT 
+                    subjects.id as ID,
+                    subjects.name as Subject,
+                    semesters.name as Semester
+                FROM subjects
+                JOIN semesters ON subjects.semester_id = semesters.id
+                ORDER BY semesters.name, subjects.name
+                """, conn)
+                
+                if not all_subjects_debug.empty:
+                    st.dataframe(all_subjects_debug, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No subjects created yet.")
 
-    # ASSIGNMENTS
-    with tabs[3]:
-        st.subheader("create New Assignment")
+        # ASSIGNMENTS
+    with tabs[3]:  # Adjust index based on your setup
+        
+        st.title("📝 Assignment Management")
+        
+        # ========== CREATE NEW ASSIGNMENT ==========
+        st.subheader("➕ Create New Assignment")
 
-        sems = pd.read_sql_query("SELECT * FROM semesters ORDER by name ASC", conn)
+        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
 
         if sems.empty:
             st.warning("Please create a semester first.")
         else:
-            sem_name = st.selectbox("Select Semester", sems["name"], key="assign_sem")
-            sem_id = int(sems[sems["name"] == sem_name]["id"].values[0])
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                sem_name = st.selectbox("Select Semester", sems["name"], key="assign_sem")
+                sem_id = int(sems[sems["name"] == sem_name]["id"].values[0])
 
-            subjects = pd.read_sql_query(
-                "SELECT * FROM subjects WHERE semester_id=?",
-                conn,
-                params=(sem_id,)
-            )
-            #TEMPORARY================
-            st.write("DEBUG sem_id:", sem_id)
-            st.write("DEBUG subjects returned:", subjects)
-            st.write("DEBUG all subjects:", pd.read_sql_query("SELECT * FROM subjects", conn))
+                subjects = pd.read_sql_query(
+                    "SELECT * FROM subjects WHERE semester_id=?",
+                    conn,
+                    params=(sem_id,)
+                )
 
-            if subjects.empty:
-                st.warning("Please create a subject for this semester first.")
-            else:
-                subject_options = {
-                    f"{row['name']} (ID:{row['id']})": row['id']
-                    for _, row in subjects.iterrows()
-                }
+                if subjects.empty:
+                    st.warning("Please create a subject for this semester first.")
+                    subject_selected = None
+                else:
+                    subject_options = {
+                        row['name']: row['id']
+                        for _, row in subjects.iterrows()
+                    }
 
-                selected_subject = st.selectbox("Select Subject", list(subject_options.keys()))
-                sub_id = int(subject_options[selected_subject])
-
-                title = st.text_input("Assignment Title")
+                    selected_subject = st.selectbox("Select Subject", list(subject_options.keys()))
+                    sub_id = int(subject_options[selected_subject])
+                    subject_selected = True
+            
+            with col2:
+                title = st.text_input("Assignment Title", placeholder="e.g., Design of RCC Beam")
                 deadline = st.date_input("Deadline")
-                file = st.file_uploader("Upload Assignment PDF", type=["pdf"])
+            
+            file = st.file_uploader("📎 Upload Assignment Question PDF (Optional)", type=["pdf"])
 
-                if st.button("Create Assignment"):
+            if st.button("➕ Create Assignment", use_container_width=True, type="primary"):
 
-                    if not title.strip():
-                        st.error("Title cannot be empty.")
-                    else:
-                        file_path = ""
+                if not subject_selected:
+                    st.error("Please select a subject.")
+                elif not title.strip():
+                    st.error("Title cannot be empty.")
+                else:
+                    file_path = ""
 
-                        if file:
-                            file_path = f"assignment_files/{datetime.now().timestamp()}_{file.name}"
-                            with open(file_path, "wb") as f:
-                                f.write(file.getbuffer())
+                    if file:
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        file_path = "assignment_files/{}_{}.pdf".format(timestamp, file.name.replace(" ", "_"))
+                        with open(file_path, "wb") as f:
+                            f.write(file.getbuffer())
 
-                            #trigger the watermark
-                            apply_watermark(file_path)
+                    try:
+                        c.execute("""
+                        INSERT INTO assignments(title,subject_id,deadline,question_file)
+                        VALUES(?,?,?,?)
+                        """, (title.strip(), int(sub_id), str(deadline), file_path))
 
-                        try:
-                            c.execute("""
-                            INSERT INTO assignments(title,subject_id,deadline,question_file)
-                            VALUES(?,?,?,?)
-                            """, (title.strip(), int(sub_id), str(deadline), file_path))
+                        conn.commit()
+                        st.success("✅ Assignment '{}' created successfully!".format(title.strip()))
+                        st.balloons()
+                        st.rerun()
 
-                            conn.commit()
-                            st.success("✅ Assignment Created Successfully!")
-                            st.rerun()
-
-                        except Exception as e:
-                            st.error(f"Error: {e}")
+                    except Exception as e:
+                        st.error("Error: {}".format(str(e)))
 
         st.divider()
-        st.subheader("Existing Assignments")
+        
+        # ========== VIEW ASSIGNMENTS ==========
+        st.subheader("📋 Existing Assignments")
+        
+        # Filter option
+        view_sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        
+        if not view_sems.empty:
+            view_filter = st.selectbox("Filter by Semester", ["All"] + view_sems["name"].tolist(), key="view_assign_filter")
+            
+            if view_filter == "All":
+                all_assignments = pd.read_sql_query("""
+                SELECT 
+                    assignments.id as ID,
+                    assignments.title as Title,
+                    subjects.name as Subject,
+                    semesters.name as Semester,
+                    assignments.deadline as Deadline,
+                    assignments.question_file as File
+                FROM assignments
+                JOIN subjects ON assignments.subject_id = subjects.id
+                JOIN semesters ON subjects.semester_id = semesters.id
+                ORDER BY assignments.deadline DESC
+                """, conn)
+            else:
+                filter_sem_id = int(view_sems[view_sems["name"] == view_filter]["id"].values[0])
+                all_assignments = pd.read_sql_query("""
+                SELECT 
+                    assignments.id as ID,
+                    assignments.title as Title,
+                    subjects.name as Subject,
+                    semesters.name as Semester,
+                    assignments.deadline as Deadline,
+                    assignments.question_file as File
+                FROM assignments
+                JOIN subjects ON assignments.subject_id = subjects.id
+                JOIN semesters ON subjects.semester_id = semesters.id
+                WHERE semesters.id = ?
+                ORDER BY assignments.deadline DESC
+                """, conn, params=(filter_sem_id,))
 
-        all_assignments = pd.read_sql_query("""
-            SELECT id, title, deadline, subject_id
-            FROM assignments
-            ORDER BY id DESC
-        """, conn)
-
-        if all_assignments.empty:
-            st.info("No assignments created yet.")
-        else:
-            st.dataframe(all_assignments, use_container_width=True, hide_index=True)
-
+            if all_assignments.empty:
+                st.info("No assignments created yet.")
+            else:
+                # Show table without file path
+                st.dataframe(
+                    all_assignments[['ID', 'Semester', 'Subject', 'Title', 'Deadline']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                st.info("📊 Total Assignments: **{}**".format(len(all_assignments)))
+                
+                st.divider()
+                
+                # ========== ASSIGNMENT DETAILS WITH DELETE ==========
+                st.subheader("📄 Assignment Details")
+                
+                for _, assignment in all_assignments.iterrows():
+                    
+                    # Get submission count
+                    submission_count = pd.read_sql_query("""
+                    SELECT COUNT(*) as count FROM submissions
+                    WHERE assignment_id=?
+                    """, conn, params=(assignment['ID'],)).iloc[0]['count']
+                    
+                    deadline_display = format_deadline_display(assignment['Deadline'])
+                    
+                    with st.expander("{} - {} - {} | {}".format(
+                        assignment['Semester'],
+                        assignment['Subject'],
+                        assignment['Title'],
+                        deadline_display
+                    )):
+                        
+                        col_detail1, col_detail2 = st.columns([2, 1])
+                        
+                        with col_detail1:
+                            st.write("**Semester:** {}".format(assignment['Semester']))
+                            st.write("**Subject:** {}".format(assignment['Subject']))
+                            st.write("**Title:** {}".format(assignment['Title']))
+                            st.write("**Deadline:** {}".format(assignment['Deadline']))
+                            st.metric("📊 Total Submissions", submission_count)
+                        
+                        with col_detail2:
+                            # Download assignment file
+                            if assignment['File'] and os.path.exists(assignment['File']):
+                                with open(assignment['File'], "rb") as f:
+                                    st.download_button(
+                                        "📥 Download Question",
+                                        f,
+                                        file_name=os.path.basename(assignment['File']),
+                                        key="download_assign_{}".format(assignment['ID']),
+                                        use_container_width=True
+                                    )
+                            else:
+                                st.info("No file uploaded")
+                        
+                        st.divider()
+                        
+                        # Delete button
+                        col_del1, col_del2 = st.columns([2, 1])
+                        
+                        with col_del1:
+                            st.warning("⚠️ **Delete Assignment:** This will remove all student submissions for this assignment.")
+                        
+                        with col_del2:
+                            if st.button("🗑️ Delete Assignment", key="delete_assign_{}".format(assignment['ID']), type="primary", use_container_width=True):
+                                
+                                try:
+                                    # Delete all submissions first
+                                    submissions = pd.read_sql_query("""
+                                    SELECT submission_file FROM submissions
+                                    WHERE assignment_id=?
+                                    """, conn, params=(assignment['ID'],))
+                                    
+                                    # Delete submission files
+                                    for _, sub in submissions.iterrows():
+                                        if sub['submission_file'] and os.path.exists(sub['submission_file']):
+                                            os.remove(sub['submission_file'])
+                                    
+                                    # Delete submissions from database
+                                    c.execute("DELETE FROM submissions WHERE assignment_id=?", (assignment['ID'],))
+                                    
+                                    # Delete assignment file
+                                    if assignment['File'] and os.path.exists(assignment['File']):
+                                        os.remove(assignment['File'])
+                                    
+                                    # Delete assignment from database
+                                    c.execute("DELETE FROM assignments WHERE id=?", (assignment['ID'],))
+                                    
+                                    conn.commit()
+                                    st.success("✅ Assignment '{}' deleted successfully!".format(assignment['Title']))
+                                    st.rerun()
+                                    
+                                except Exception as e:
+                                    st.error("Error deleting assignment: {}".format(str(e)))
     # SUBMISSIONS & AI
     with tabs[4]:
 
