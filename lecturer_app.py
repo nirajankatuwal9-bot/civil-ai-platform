@@ -13,6 +13,7 @@ from PIL import Image
 import google.generativeai as genai
 import fitz
 
+
 # ================= CONFIG =================
 
 st.set_page_config(
@@ -176,6 +177,45 @@ if "logged_in" not in st.session_state:
     st.session_state.role = None
     st.session_state.username = None
 
+# ================= SESSION SECURITY =================
+
+import time
+
+# Session timeout in seconds (30 minutes)
+SESSION_TIMEOUT = 1800
+
+def check_session_timeout():
+    """
+    Check if session has timed out
+    Returns: True if session is valid, False if timed out
+    """
+    if "last_activity" not in st.session_state:
+        st.session_state.last_activity = time.time()
+        return True
+    
+    current_time = time.time()
+    elapsed = current_time - st.session_state.last_activity
+    
+    if elapsed > SESSION_TIMEOUT:
+        return False  # Session expired
+    
+    # Update last activity time
+    st.session_state.last_activity = current_time
+    return True
+
+
+def require_login():
+    """
+    Decorator-style function to check login and session
+    """
+    if not st.session_state.get("logged_in", False):
+        st.error("🔒 Please login to access this page")
+        st.stop()
+    
+    if not check_session_timeout():
+        st.warning("⏰ Your session has expired due to inactivity. Please login again.")
+        st.session_state.clear()
+        st.rerun()
 # ================= LOGIN =================
 
 if not st.session_state.logged_in:
@@ -214,6 +254,9 @@ if not st.session_state.logged_in:
         st.stop()
 
 # ================= SYSTEM & SIDEBAR =================
+
+#check session timeout
+require_login()
 
 with st.sidebar:
     # 1. Profile & Logout
@@ -496,6 +539,209 @@ def get_storage_stats():
             }
     
     return stats
+# ================= FILE VALIDATION & SECURITY =================
+
+# Configuration constants
+MAX_FILE_SIZE_MB = 25  # Maximum file size in MB
+ALLOWED_ASSIGNMENT_TYPES = ['pdf']
+ALLOWED_SUBMISSION_TYPES = ['pdf']
+ALLOWED_MATERIAL_TYPES = ['pdf', 'docx', 'pptx', 'zip', 'jpg', 'png']
+
+def validate_file_upload(uploaded_file, allowed_types, max_size_mb=MAX_FILE_SIZE_MB):
+    """
+    Validate uploaded file for type and size
+    Returns: (is_valid, error_message)
+    """
+    if uploaded_file is None:
+        return False, "No file uploaded"
+    
+    # Check file extension
+    file_extension = uploaded_file.name.split('.')[-1].lower()
+    if file_extension not in allowed_types:
+        return False, "Invalid file type. Allowed: {}".format(', '.join(allowed_types))
+    
+    # Check file size
+    file_size_mb = uploaded_file.size / (1024 * 1024)
+    if file_size_mb > max_size_mb:
+        return False, "File too large! Maximum size: {} MB (Your file: {:.2f} MB)".format(max_size_mb, file_size_mb)
+    
+    # Check if file is actually a PDF (magic number check for PDFs)
+    if file_extension == 'pdf':
+        uploaded_file.seek(0)
+        header = uploaded_file.read(5)
+        uploaded_file.seek(0)
+        if header != b'%PDF-':
+            return False, "File appears to be corrupted or not a valid PDF"
+    
+    return True, "File is valid"
+
+
+def safe_file_operation(operation, *args, **kwargs):
+    """
+    Wrapper for safe file operations with error handling
+    Returns: (success, result_or_error_message)
+    """
+    try:
+        result = operation(*args, **kwargs)
+        return True, result
+    except PermissionError:
+        return False, "Permission denied. File may be in use."
+    except FileNotFoundError:
+        return False, "File not found."
+    except Exception as e:
+        return False, "Error: {}".format(str(e))
+
+
+def check_deadline_passed(deadline_str):
+    """
+    Check if deadline has passed
+    Returns: (is_late, message)
+    """
+    try:
+        deadline_date = datetime.strptime(str(deadline_str), '%Y-%m-%d').date()
+        current_date = datetime.now().date()
+        
+        if current_date > deadline_date:
+            days_late = (current_date - deadline_date).days
+            return True, "Deadline passed {} days ago".format(days_late)
+        else:
+            return False, "Deadline not passed"
+    except:
+        return False, "Invalid deadline format"
+
+# ================= DATABASE BACKUP SYSTEM =================
+
+def create_database_backup():
+    """
+    Create a timestamped backup of the database
+    Returns: (success, message)
+    """
+    try:
+        import shutil
+        
+        # Create backup directory
+        backup_dir = "data/backups"
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        # Generate backup filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = "{}/lecturer_backup_{}.db".format(backup_dir, timestamp)
+        
+        # Close current connection temporarily
+        conn.close()
+        
+        # Copy database file
+        shutil.copy2(DB_PATH, backup_path)
+        
+        # Reconnect
+        global conn, c
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        c = conn.cursor()
+        
+        # Get backup file size
+        backup_size = os.path.getsize(backup_path) / 1024  # KB
+        
+        # Clean old backups (keep only last 10)
+        cleanup_old_backups(backup_dir, keep_count=10)
+        
+        return True, "Backup created: {} ({:.2f} KB)".format(backup_path, backup_size)
+    
+    except Exception as e:
+        # Reconnect if failed
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        c = conn.cursor()
+        return False, "Backup failed: {}".format(str(e))
+
+
+def cleanup_old_backups(backup_dir, keep_count=10):
+    """
+    Keep only the most recent N backups
+    """
+    try:
+        backups = []
+        for filename in os.listdir(backup_dir):
+            if filename.startswith("lecturer_backup_") and filename.endswith(".db"):
+                file_path = os.path.join(backup_dir, filename)
+                backups.append((file_path, os.path.getmtime(file_path)))
+        
+        # Sort by modification time (newest first)
+        backups.sort(key=lambda x: x[1], reverse=True)
+        
+        # Delete old backups
+        for file_path, _ in backups[keep_count:]:
+            os.remove(file_path)
+    
+    except Exception as e:
+        st.warning("Could not cleanup old backups: {}".format(str(e)))
+
+
+def restore_database_from_backup(backup_path):
+    """
+    Restore database from a backup file
+    Returns: (success, message)
+    """
+    try:
+        import shutil
+        
+        if not os.path.exists(backup_path):
+            return False, "Backup file not found"
+        
+        # Close current connection
+        conn.close()
+        
+        # Backup current database before restoring
+        emergency_backup = DB_PATH + ".emergency"
+        shutil.copy2(DB_PATH, emergency_backup)
+        
+        # Restore from backup
+        shutil.copy2(backup_path, DB_PATH)
+        
+        # Reconnect
+        global conn, c
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        c = conn.cursor()
+        
+        return True, "Database restored successfully from {}".format(backup_path)
+    
+    except Exception as e:
+        # Try to restore emergency backup
+        try:
+            shutil.copy2(emergency_backup, DB_PATH)
+            conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+            c = conn.cursor()
+        except:
+            pass
+        
+        return False, "Restore failed: {}".format(str(e))
+# ================= CONFIRMATION DIALOGS =================
+
+def confirm_delete(item_name, item_type="item"):
+    """
+    Create a two-step confirmation for delete actions
+    Returns: True if confirmed, False otherwise
+    """
+    confirm_key = "confirm_delete_{}".format(item_name.replace(" ", "_"))
+    
+    if confirm_key not in st.session_state:
+        st.session_state[confirm_key] = False
+    
+    if not st.session_state[confirm_key]:
+        if st.button("🗑️ Delete {}".format(item_type), key="first_{}".format(confirm_key)):
+            st.session_state[confirm_key] = True
+            st.rerun()
+        return False
+    else:
+        st.warning("⚠️ Are you sure? This cannot be undone!")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✅ Yes, Delete", key="confirm_{}".format(confirm_key), type="primary"):
+                st.session_state[confirm_key] = False
+                return True
+        with col2:
+            if st.button("❌ Cancel", key="cancel_{}".format(confirm_key)):
+                st.session_state[confirm_key] = False
+                st.rerun()
+        return False
 # ==========================================================
 # ===================== LECTURER ============================
 # ==========================================================
@@ -960,7 +1206,7 @@ if role == "lecturer":
                 title = st.text_input("Assignment Title", placeholder="e.g., Design of RCC Beam")
                 deadline = st.date_input("Deadline")
             
-            file = st.file_uploader("📎 Upload Assignment Question PDF (Optional)", type=["pdf"])
+                        file = st.file_uploader("📎 Upload Assignment Question PDF (Optional)", type=["pdf"])
 
             if st.button("➕ Create Assignment", use_container_width=True, type="primary"):
 
@@ -972,10 +1218,23 @@ if role == "lecturer":
                     file_path = ""
 
                     if file:
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        file_path = "assignment_files/{}_{}.pdf".format(timestamp, file.name.replace(" ", "_"))
-                        with open(file_path, "wb") as f:
-                            f.write(file.getbuffer())
+                        # ✅ VALIDATE FILE
+                        is_valid, validation_msg = validate_file_upload(file, ALLOWED_ASSIGNMENT_TYPES, MAX_FILE_SIZE_MB)
+                        
+                        if not is_valid:
+                            st.error("❌ File Validation Failed: {}".format(validation_msg))
+                        else:
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            file_path = "assignment_files/{}_{}.pdf".format(timestamp, file.name.replace(" ", "_"))
+                            
+                            # Safe file save operation
+                            success, result = safe_file_operation(
+                                lambda: open(file_path, "wb").write(file.getbuffer())
+                            )
+                            
+                            if not success:
+                                st.error("❌ File Save Failed: {}".format(result))
+                                file_path = ""
 
                     try:
                         c.execute("""
@@ -989,7 +1248,13 @@ if role == "lecturer":
                         st.rerun()
 
                     except Exception as e:
-                        st.error("Error: {}".format(str(e)))
+                        st.error("Database Error: {}".format(str(e)))
+                        # Cleanup file if database insert failed
+                        if file_path and os.path.exists(file_path):
+                            try:
+                                os.remove(file_path)
+                            except:
+                                pass
 
         st.divider()
         
@@ -2204,6 +2469,54 @@ if role == "lecturer":
         with col_stat4:
             submission_count = pd.read_sql_query("SELECT COUNT(*) as count FROM submissions", conn).iloc[0]['count']
             st.metric("📤 Submissions", submission_count)
+        st.divider()
+        
+        # ========== DATABASE BACKUP & RESTORE ==========
+        st.subheader("💾 Database Backup & Restore")
+        
+        col_backup1, col_backup2 = st.columns(2)
+        
+        with col_backup1:
+            st.write("**Create Backup**")
+            if st.button("📦 Backup Database Now", use_container_width=True, type="primary"):
+                with st.spinner("Creating backup..."):
+                    success, message = create_database_backup()
+                
+                if success:
+                    st.success("✅ {}".format(message))
+                else:
+                    st.error("❌ {}".format(message))
+        
+        with col_backup2:
+            st.write("**Restore from Backup**")
+            
+            backup_dir = "data/backups"
+            if os.path.exists(backup_dir):
+                backups = [f for f in os.listdir(backup_dir) if f.endswith('.db')]
+                backups.sort(reverse=True)
+                
+                if backups:
+                    selected_backup = st.selectbox(
+                        "Select backup file",
+                        backups,
+                        key="restore_backup_select"
+                    )
+                    
+                    if st.button("🔄 Restore from Backup", use_container_width=True):
+                        backup_path = os.path.join(backup_dir, selected_backup)
+                        
+                        with st.spinner("Restoring database..."):
+                            success, message = restore_database_from_backup(backup_path)
+                        
+                        if success:
+                            st.success("✅ {}".format(message))
+                            st.info("⚠️ Please refresh the page to see changes")
+                        else:
+                            st.error("❌ {}".format(message))
+                else:
+                    st.info("No backups available")
+            else:
+                st.info("No backup directory found")
 # ==========================================================
 # ===================== STUDENT =============================
 # ==========================================================
@@ -2445,7 +2758,7 @@ elif role == "student":
                         elif days_left is not None and days_left <= 2:
                             st.info("🟡 Only {} days left to submit!".format(days_left))
 
-                        # UPLOAD NEW SUBMISSION
+                                                # UPLOAD NEW SUBMISSION
                         uploaded = st.file_uploader(
                             "📤 Upload Your Answer PDF",
                             type=["pdf"],
@@ -2453,27 +2766,69 @@ elif role == "student":
                         )
 
                         if st.button("Submit Assignment", key="submit_{}".format(row['id']), type="primary", use_container_width=True):
+                            
                             if not uploaded:
                                 st.warning("⚠️ Please upload a PDF file before submitting.")
                             else:
-                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                file_path = "submission_files/" + str(st.session_state.username) + "_" + str(row['id']) + "_" + timestamp + ".pdf"
-
-                                with open(file_path, "wb") as f:
-                                    f.write(uploaded.getbuffer())
+                                # ✅ VALIDATE FILE
+                                is_valid, validation_msg = validate_file_upload(uploaded, ALLOWED_SUBMISSION_TYPES, MAX_FILE_SIZE_MB)
                                 
-                                # Automatic Watermark branding
-                                apply_watermark(file_path, watermark_text=f"🌊 The N-Streamlines | Student: {st.session_state.username}")
+                                if not is_valid:
+                                    st.error("❌ {}".format(validation_msg))
+                                else:
+                                    # ✅ CHECK DEADLINE (Double-check on server side)
+                                    is_late, late_msg = check_deadline_passed(row['deadline'])
+                                    
+                                    if is_late:
+                                        st.error("🔒 Submission blocked: {}".format(late_msg))
+                                    else:
+                                        try:
+                                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                            file_path = "submission_files/{}_{}_{}.pdf".format(
+                                                st.session_state.username,
+                                                row['id'],
+                                                timestamp
+                                            )
 
-                                c.execute("""
-                                INSERT INTO submissions(assignment_id, student_id, submission_time, submission_file, marks, ai_summary)
-                                VALUES(?,?,?,?,?,?)
-                                """, (int(row["id"]), int(st.session_state.user_id), str(datetime.now()), file_path, "", ""))
+                                            # Safe file save
+                                            with open(file_path, "wb") as f:
+                                                f.write(uploaded.getbuffer())
+                                            
+                                            # Apply watermark
+                                            apply_watermark(
+                                                file_path,
+                                                watermark_text="🌊 The N-Streamlines | Student: {}".format(st.session_state.username)
+                                            )
 
-                                conn.commit()
-                                st.success("✅ Assignment submitted successfully!")
-                                st.balloons()
-                                st.rerun()
+                                            # Save to database
+                                            c.execute("""
+                                            INSERT INTO submissions(
+                                                assignment_id, student_id, submission_time, 
+                                                submission_file, marks, ai_summary
+                                            )
+                                            VALUES(?,?,?,?,?,?)
+                                            """, (
+                                                int(row["id"]),
+                                                int(st.session_state.user_id),
+                                                str(datetime.now()),
+                                                file_path,
+                                                "",
+                                                ""
+                                            ))
+
+                                            conn.commit()
+                                            st.success("✅ Assignment submitted successfully!")
+                                            st.balloons()
+                                            st.rerun()
+                                        
+                                        except Exception as e:
+                                            st.error("Submission Error: {}".format(str(e)))
+                                            # Cleanup file if database insert failed
+                                            if os.path.exists(file_path):
+                                                try:
+                                                    os.remove(file_path)
+                                                except:
+                                                    pass
                
         # ================= STUDY MATERIALS =================
     with tabs[1]:
