@@ -1143,10 +1143,8 @@ if role == "lecturer":
                             st.write(row['ai_summary'])
 
         # ANALYTICS
-    with tabs[5]:  # Adjust index if needed
-        
+    with tabs[5]: 
         st.title("📈 Performance Analytics")
-        
         st.subheader("📊 Grade Statistics")
         
         sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
@@ -1154,145 +1152,267 @@ if role == "lecturer":
         if not sems.empty:
             selected_sem = st.selectbox("Select Semester", ["All"] + sems["name"].tolist(), key="analytics_sem")
             
-            if selected_sem == "All":
-                df = pd.read_sql_query("""
-                SELECT 
-                    semesters.name as Semester,
-                    subjects.name as Subject,
-                    assignments.title as Assignment,
-                    users.full_name as Student_Name,
-                    users.username as Username,
-                    submissions.submission_time as Submission_Date,
-                    assignments.deadline as Deadline,
-                    submissions.marks as Marks,
-                    submissions.ai_summary as AI_Feedback
-                FROM submissions
-                JOIN assignments ON submissions.assignment_id=assignments.id
-                JOIN subjects ON assignments.subject_id = subjects.id
-                JOIN semesters ON subjects.semester_id = semesters.id
-                JOIN users ON submissions.student_id = users.id
-                WHERE submissions.marks IS NOT NULL AND submissions.marks != ''
-                ORDER BY semesters.name, subjects.name, assignments.title, users.full_name
-                """, conn)
+            # --- STEP 1: THE MASTER QUERY (Identifies every student and every assignment) ---
+            master_query = """
+            SELECT 
+                semesters.name as Semester,
+                users.full_name as Student_Name,
+                users.username as Username,
+                subjects.name as Subject,
+                assignments.title as Assignment,
+                assignments.deadline as Deadline,
+                submissions.marks as Marks,
+                submissions.submission_time as Submission_Date,
+                submissions.ai_summary as AI_Feedback
+            FROM users
+            CROSS JOIN assignments 
+            JOIN subjects ON assignments.subject_id = subjects.id
+            JOIN semesters ON subjects.semester_id = semesters.id
+            LEFT JOIN submissions ON users.id = submissions.student_id AND assignments.id = submissions.assignment_id
+            WHERE users.role = 'student' 
+            AND users.semester_id = semesters.id
+            """
+            
+            if selected_sem != "All":
+                raw_df = pd.read_sql_query(master_query + " AND semesters.name = ?", conn, params=(selected_sem,))
             else:
-                sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
-                df = pd.read_sql_query("""
-                SELECT 
-                    semesters.name as Semester,
-                    subjects.name as Subject,
-                    assignments.title as Assignment,
-                    users.full_name as Student_Name,
-                    users.username as Username,
-                    submissions.submission_time as Submission_Date,
-                    assignments.deadline as Deadline,
-                    submissions.marks as Marks,
-                    submissions.ai_summary as AI_Feedback
-                FROM submissions
-                JOIN assignments ON submissions.assignment_id=assignments.id
-                JOIN subjects ON assignments.subject_id = subjects.id
-                JOIN semesters ON subjects.semester_id = semesters.id
-                JOIN users ON submissions.student_id = users.id
-                WHERE semesters.id = ? AND submissions.marks IS NOT NULL AND submissions.marks != ''
-                ORDER BY subjects.name, assignments.title, users.full_name
-                """, conn, params=(sem_id,))
+                raw_df = pd.read_sql_query(master_query, conn)
 
-            if not df.empty:
-                df["marks"] = pd.to_numeric(df["Marks"], errors="coerce")
-                
+            if not raw_df.empty:
+                # --- STEP 2: DATA PROCESSING (Assigning 0 for Negligence) ---
+                processed_list = []
+                current_date = datetime.now().date()
+
+                for _, row in raw_df.iterrows():
+                    deadline_date = datetime.strptime(str(row['Deadline']), '%Y-%m-%d').date()
+                    raw_marks = row['Marks']
+                    has_marks = raw_marks is not None and str(raw_marks).lower() != 'nan' and str(raw_marks).strip() != ""
+                    
+                    if row['Submission_Date'] is not None:
+                        final_score = raw_marks if has_marks else "Pending"
+                        status = "✅ Submitted"
+                    elif current_date > deadline_date:
+                        final_score = 0  # <--- FORCE 0 FOR DELAYED/NEGLIGENT
+                        status = "🔴 MISSED"
+                    else:
+                        final_score = "TBD"
+                        status = "🟡 Upcoming"
+
+                    processed_list.append({
+                        "Semester": row['Semester'],
+                        "Student_Name": row['Student_Name'],
+                        "Username": row['Username'],
+                        "Subject": row['Subject'],
+                        "Assignment": row['Assignment'],
+                        "Deadline": row['Deadline'],
+                        "Marks": final_score,
+                        "Status": status,
+                        "AI_Feedback": row['AI_Feedback'] if row['AI_Feedback'] else "No Feedback"
+                    })
+
+                df = pd.DataFrame(processed_list)
+                # Helper for calculations
+                df["numeric_marks"] = pd.to_numeric(df["Marks"], errors="coerce").fillna(0)
+
                 # ========== DOWNLOAD OPTIONS ==========
                 st.subheader("📥 Download Grade Reports")
-                
                 col1, col2, col3 = st.columns(3)
                 
-                # Option 1: Detailed Report (with feedback)
                 with col1:
                     csv_detailed = df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📄 Detailed Report (with AI Feedback)",
-                        data=csv_detailed,
-                        file_name="Grades_Detailed_{}.csv".format(selected_sem),
-                        mime='text/csv',
-                        use_container_width=True
-                    )
+                    st.download_button("📄 Detailed Report (With Feedbacks)", csv_detailed, f"Detailed_{selected_sem}.csv", 'text/csv', use_container_width=True)
                 
-                # Option 2: Summary Report (without feedback)
                 with col2:
-                    df_summary = df[['Semester', 'Subject', 'Assignment', 'Student_Name', 'Username', 'Submission_Date', 'Deadline', 'Marks']]
-                    csv_summary = df_summary.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📊 Summary Report (No Feedback)",
-                        data=csv_summary,
-                        file_name="Grades_Summary_{}.csv".format(selected_sem),
-                        mime='text/csv',
-                        use_container_width=True
-                    )
+                    df_summary = df[['Semester', 'Subject', 'Assignment', 'Student_Name', 'Username', 'Deadline', 'Status', 'Marks']]
+                    st.download_button("📊 Summary Report (Incl. 0s)", df_summary.to_csv(index=False).encode('utf-8'), f"Summary_{selected_sem}.csv", 'text/csv', use_container_width=True)
                 
-                # Option 3: Student-wise Aggregated Report
                 with col3:
-                    # Create pivot table: Students x Assignments
-                    df_pivot = df.pivot_table(
-                        index=['Semester', 'Student_Name', 'Username', 'Subject'],
-                        columns='Assignment',
-                        values='marks',
-                        aggfunc='first'
-                    ).reset_index()
-                    
-                    # Add average column
-                    assignment_cols = [col for col in df_pivot.columns if col not in ['Semester', 'Student_Name', 'Username', 'Subject']]
-                    df_pivot['Average'] = df_pivot[assignment_cols].mean(axis=1).round(2)
-                    
-                    csv_pivot = df_pivot.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📈 Student-wise Summary",
-                        data=csv_pivot,
-                        file_name="Grades_StudentWise_{}.csv".format(selected_sem),
-                        mime='text/csv',
-                        use_container_width=True
-                    )
-                
+                    # Student-wise Summary (Pivot Table)
+                    df_pivot = df.pivot_table(index=['Semester', 'Student_Name', 'Username', 'Subject'], 
+                                            columns='Assignment', values='numeric_marks', aggfunc='first').reset_index()
+                    # Add Semester Average
+                    assign_cols = [c for c in df_pivot.columns if c not in ['Semester', 'Student_Name', 'Username', 'Subject']]
+                    df_pivot['Avg_Score'] = df_pivot[assign_cols].mean(axis=1).round(2)
+                    st.download_button("📈 Student-wise Summary", df_pivot.to_csv(index=False).encode('utf-8'), f"Student_Pivot_{selected_sem}.csv", 'text/csv', use_container_width=True)
+
                 st.divider()
                 
                 # ========== VISUALIZATIONS ==========
                 st.subheader("📊 Average Marks by Assignment")
-                avg_marks = df.groupby("Assignment")["marks"].mean()
+                avg_marks = df.groupby("Assignment")["numeric_marks"].mean()
                 st.bar_chart(avg_marks)
                 
+                col_m1, col_m2, col_m3 = st.columns(3)
+                col_m1.metric("Total Expectations", len(df))
+                col_m2.metric("Class Average", f"{df['numeric_marks'].mean():.2f}/10")
+                col_m3.metric("Negligence Cases", len(df[df['Status'] == "🔴 MISSED"]))
+
                 st.divider()
-                
-                # Metrics
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Total Submissions", len(df))
-                with col2:
-                    st.metric("Average Score", "{:.2f}/10".format(df['marks'].mean()))
-                with col3:
-                    st.metric("Highest Score", "{}/10".format(df['marks'].max()))
-                
-                st.divider()
-                
-                # ========== SUBJECT-WISE BREAKDOWN ==========
                 st.subheader("📚 Subject-wise Performance")
-                
-                subject_stats = df.groupby('Subject').agg({
-                    'marks': ['count', 'mean', 'min', 'max']
-                }).round(2)
-                subject_stats.columns = ['Total Submissions', 'Average', 'Lowest', 'Highest']
+                subject_stats = df.groupby('Subject').agg({'numeric_marks': ['count', 'mean', 'min', 'max']}).round(2)
+                subject_stats.columns = ['Total Assignments', 'Avg Grade', 'Min', 'Max']
                 st.dataframe(subject_stats, use_container_width=True)
-                
+
                 st.divider()
-                
-                # ========== RAW DATA TABLE ==========
-                st.subheader("📋 Detailed Grade Table")
-                st.dataframe(
-                    df[['Semester', 'Subject', 'Assignment', 'Student_Name', 'Username', 'Marks']],
-                    use_container_width=True,
-                    hide_index=True
-                )
+                st.subheader("📋 Detailed Grade Table (Master View)")
+                # Formatting table for visual clarity
+                st.dataframe(df[['Student_Name', 'Subject', 'Assignment', 'Status', 'Marks']], use_container_width=True, hide_index=True)
                 
             else:
-                st.info("📭 No graded submissions yet for this semester.")
+                st.info("📭 No data found for this selection.")
         else:
             st.warning("⚠️ Please create semesters first.")
+        # ANALYTICS
+   # with tabs[5]:  # Adjust index if needed
+        
+    #    st.title("📈 Performance Analytics")
+        
+     #   st.subheader("📊 Grade Statistics")
+        
+      #  sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        
+       # if not sems.empty:
+        #    selected_sem = st.selectbox("Select Semester", ["All"] + sems["name"].tolist(), key="analytics_sem")
+            
+         #   if selected_sem == "All":
+          #      df = pd.read_sql_query("""
+           #     SELECT 
+            #        semesters.name as Semester,
+             #       subjects.name as Subject,
+              #      assignments.title as Assignment,
+               #     users.full_name as Student_Name,
+                #    users.username as Username,
+                 #   submissions.submission_time as Submission_Date,
+                  #  assignments.deadline as Deadline,
+                   # submissions.marks as Marks,
+                    #submissions.ai_summary as AI_Feedback
+                #FROM submissions
+                #JOIN assignments ON submissions.assignment_id=assignments.id
+                #JOIN subjects ON assignments.subject_id = subjects.id
+                #JOIN semesters ON subjects.semester_id = semesters.id
+                #JOIN users ON submissions.student_id = users.id
+                #WHERE submissions.marks IS NOT NULL AND submissions.marks != ''
+                #ORDER BY semesters.name, subjects.name, assignments.title, users.full_name
+                #""", conn)
+            #else:
+             #   sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
+              #  df = pd.read_sql_query("""
+               # SELECT 
+                #    semesters.name as Semester,
+                 #   subjects.name as Subject,
+                  #  assignments.title as Assignment,
+                   # users.full_name as Student_Name,
+                    #users.username as Username,
+                    #submissions.submission_time as Submission_Date,
+                    #assignments.deadline as Deadline,
+                    #submissions.marks as Marks,
+                    #submissions.ai_summary as AI_Feedback
+                #FROM submissions
+                #JOIN assignments ON submissions.assignment_id=assignments.id
+                #JOIN subjects ON assignments.subject_id = subjects.id
+                #JOIN semesters ON subjects.semester_id = semesters.id
+                #JOIN users ON submissions.student_id = users.id
+                #WHERE semesters.id = ? AND submissions.marks IS NOT NULL AND submissions.marks != ''
+                #ORDER BY subjects.name, assignments.title, users.full_name
+                #""", conn, params=(sem_id,))
+
+            #if not df.empty:
+             #   df["marks"] = pd.to_numeric(df["Marks"], errors="coerce")
+              #  
+               # # ========== DOWNLOAD OPTIONS ==========
+                #st.subheader("📥 Download Grade Reports")
+                #
+                #col1, col2, col3 = st.columns(3)
+                
+                # Option 1: Detailed Report (with feedback)
+                #with col1:
+                 #   csv_detailed = df.to_csv(index=False).encode('utf-8')
+                  #  st.download_button(
+                   #     label="📄 Detailed Report (with AI Feedback)",
+                    #    data=csv_detailed,
+                     #   file_name="Grades_Detailed_{}.csv".format(selected_sem),
+                      #  mime='text/csv',
+                       # use_container_width=True
+                    #)
+                
+                # Option 2: Summary Report (without feedback)
+                #with col2:
+                 #   df_summary = df[['Semester', 'Subject', 'Assignment', 'Student_Name', 'Username', 'Submission_Date', 'Deadline', 'Marks']]
+                  #  csv_summary = df_summary.to_csv(index=False).encode('utf-8')
+                   # st.download_button(
+                    #    label="📊 Summary Report (No Feedback)",
+                     #   data=csv_summary,
+                      #  file_name="Grades_Summary_{}.csv".format(selected_sem),
+                       # mime='text/csv',
+                        #use_container_width=True
+                    #)
+                
+                ## Option 3: Student-wise Aggregated Report
+                #with col3:
+                 #   # Create pivot table: Students x Assignments
+                  #  df_pivot = df.pivot_table(
+                   #     index=['Semester', 'Student_Name', 'Username', 'Subject'],
+                    #    columns='Assignment',
+                     #   values='marks',
+                      #  aggfunc='first'
+                    #).reset_index()
+                    
+                    # Add average column
+                    #assignment_cols = [col for col in df_pivot.columns if col not in ['Semester', 'Student_Name', 'Username', 'Subject']]
+                    #df_pivot['Average'] = df_pivot[assignment_cols].mean(axis=1).round(2)
+                    
+                   # csv_pivot = df_pivot.to_csv(index=False).encode('utf-8')
+                    #st.download_button(
+                     #   label="📈 Student-wise Summary",
+                      #  data=csv_pivot,
+                       # file_name="Grades_StudentWise_{}.csv".format(selected_sem),
+                        #mime='text/csv',
+                        #use_container_width=True
+                    #)
+                
+               # st.divider()
+                
+                # ========== VISUALIZATIONS ==========
+                #st.subheader("📊 Average Marks by Assignment")
+                #avg_marks = df.groupby("Assignment")["marks"].mean()
+                #st.bar_chart(avg_marks)
+                
+                #st.divider()
+                
+                # Metrics
+                #col1, col2, col3 = st.columns(3)
+                #with col1:
+                 #   st.metric("Total Submissions", len(df))
+                #with col2:
+                 #   st.metric("Average Score", "{:.2f}/10".format(df['marks'].mean()))
+                #with col3:
+                 #   st.metric("Highest Score", "{}/10".format(df['marks'].max()))
+                
+                #st.divider()
+                
+                ## ========== SUBJECT-WISE BREAKDOWN ==========
+                #st.subheader("📚 Subject-wise Performance")
+                
+                #subject_stats = df.groupby('Subject').agg({
+                 #   'marks': ['count', 'mean', 'min', 'max']
+                #}).round(2)
+                #subject_stats.columns = ['Total Submissions', 'Average', 'Lowest', 'Highest']
+                #st.dataframe(subject_stats, use_container_width=True)
+                
+                #st.divider()
+                
+                # ========== RAW DATA TABLE ==========
+                #st.subheader("📋 Detailed Grade Table")
+                #st.dataframe(
+                 #   df[['Semester', 'Subject', 'Assignment', 'Student_Name', 'Username', 'Marks']],
+                  #  use_container_width=True,
+                   # hide_index=True
+                #)
+                
+            #else:
+             #   st.info("📭 No graded submissions yet for this semester.")
+        #else:
+         #   st.warning("⚠️ Please create semesters first.")
 
     # MANAGE STUDENTS
     with tabs[6]:
