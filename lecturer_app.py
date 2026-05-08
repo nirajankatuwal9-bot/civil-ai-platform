@@ -2314,8 +2314,8 @@ elif role == "student":
                                 status = "✅ Graded"
                                 score = f"{raw_marks}/10"
                             else:
-                                status = "⏳ Pending Grade"
-                                score = "Processing"
+                                status = "❌ Delayed"
+                                score = "N/A"
                     
                         # 2. If NOT submitted, check if the deadline has passed
                         elif current_date > deadline_date:
