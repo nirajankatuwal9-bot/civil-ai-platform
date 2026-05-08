@@ -501,7 +501,7 @@ if role == "lecturer":
                                         with st.spinner("AI is grading..."):
                                             try:
                                                 result = vision_grade(row["submission_file"],rubric)
-                                                st.write("***AI Response:***)
+                                                st.write("***AI Response:***")
                                                 st.write(result)
 
                                                 marks = extract_marks(result)
