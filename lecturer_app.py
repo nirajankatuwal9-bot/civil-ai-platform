@@ -1925,7 +1925,7 @@ elif role == "student":
             
             # Show overdue assignments (if any)
             if overdue:
-                st.error("🔴 **OVERDUE ASSIGNMENTS - Submit Immediately!**")
+                st.error("🔴 **OVERDUE ASSIGNMENTS - Cannot submit!!**")
                 for assign in overdue:
                     st.warning("⚠️ **{}** - {} (Overdue by {} days)".format(
                         assign['subject'],
