@@ -3111,7 +3111,7 @@ elif role == "student":
         st.title("📝 My Assignments")
         
         # ========== ANNOUNCEMENTS ==========
-        announcements = get_announcements_for_semester(sem_id)
+        announcements = get_announcements_for_semester(semester_id)
         
         if not announcements.empty:
             st.subheader("📢 Announcements")
