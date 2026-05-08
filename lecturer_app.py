@@ -1184,19 +1184,33 @@ if role == "lecturer":
                 current_date = datetime.now().date()
 
                 for _, row in raw_df.iterrows():
+                    # 1. Standardize Inputs
                     deadline_date = datetime.strptime(str(row['Deadline']), '%Y-%m-%d').date()
+                    current_date = datetime.now().date()
+                    
+                    # Check if marks are valid
                     raw_marks = row['Marks']
                     has_marks = raw_marks is not None and str(raw_marks).lower() != 'nan' and str(raw_marks).strip() != ""
                     
-                    if row['Submission_Date'] is not None:
-                        final_score = raw_marks if has_marks else "Pending"
+                    # Check if submission date is actually there (Strict Check)
+                    # pd.isna() handles both None and the 'nan' values Pandas creates
+                    is_actually_submitted = not pd.isna(row['Submission_Date']) and str(row['Submission_Date']).strip() != ""
+
+                    # 2. Determine Status and Marks
+                    if is_actually_submitted:
+                        # Case: Student uploaded a file
                         status = "✅ Submitted"
+                        final_score = raw_marks if has_marks else "Pending"
+                    
                     elif current_date > deadline_date:
-                        final_score = 0  # <--- FORCE 0 FOR DELAYED/NEGLIGENT
+                        # Case: No file AND deadline has passed
                         status = "🔴 MISSED"
+                        final_score = 0  # Force 0 for negligence
+                    
                     else:
+                        # Case: No file BUT still has time
+                        status = "🟡 Pending"
                         final_score = "TBD"
-                        status = "🟡 Upcoming"
 
                     processed_list.append({
                         "Semester": row['Semester'],
