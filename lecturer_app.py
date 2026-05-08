@@ -237,7 +237,7 @@ def extract_marks(text):
     ]
 
     for pattern in patterns:
-        m = re.search(patter, text, re.IGNORECASE)
+        m = re.search(pattern, text, re.IGNORECASE)
         
         if match:
             try:
