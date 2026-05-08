@@ -408,6 +408,94 @@ def format_deadline_display(deadline_str):
         return "{}  {} (Tomorrow)".format(color, deadline_str)
     else:
         return "{}  {} ({} days left)".format(color, deadline_str, days)
+# ================= FILE CLEANUP UTILITIES =================
+
+def cleanup_orphaned_files():
+    """
+    Clean up files that exist on disk but not in database
+    Returns: (files_deleted, space_freed_mb)
+    """
+    deleted_count = 0
+    space_freed = 0
+    
+    # Get all files referenced in database
+    db_files = set()
+    
+    # 1. Assignment question files
+    assignments = pd.read_sql_query("SELECT question_file FROM assignments WHERE question_file IS NOT NULL AND question_file != ''", conn)
+    for _, row in assignments.iterrows():
+        if row['question_file']:
+            db_files.add(row['question_file'])
+    
+    # 2. Submission files
+    submissions = pd.read_sql_query("SELECT submission_file FROM submissions WHERE submission_file IS NOT NULL AND submission_file != ''", conn)
+    for _, row in submissions.iterrows():
+        if row['submission_file']:
+            db_files.add(row['submission_file'])
+    
+    # 3. Study material files
+    materials = pd.read_sql_query("SELECT file_path FROM study_materials WHERE file_path IS NOT NULL AND file_path != ''", conn)
+    for _, row in materials.iterrows():
+        if row['file_path']:
+            db_files.add(row['file_path'])
+    
+    # Check each folder for orphaned files
+    folders = ['assignment_files', 'submission_files', 'study_materials']
+    
+    for folder in folders:
+        if os.path.exists(folder):
+            for filename in os.listdir(folder):
+                file_path = os.path.join(folder, filename)
+                
+                # If file exists on disk but not in database
+                if file_path not in db_files and os.path.isfile(file_path):
+                    try:
+                        file_size = os.path.getsize(file_path)
+                        os.remove(file_path)
+                        deleted_count += 1
+                        space_freed += file_size
+                    except Exception as e:
+                        st.warning("Could not delete {}: {}".format(file_path, str(e)))
+    
+    space_freed_mb = space_freed / (1024 * 1024)  # Convert to MB
+    return deleted_count, round(space_freed_mb, 2)
+
+
+def get_storage_stats():
+    """
+    Get storage usage statistics
+    Returns: dict with folder sizes
+    """
+    stats = {}
+    
+    folders = {
+        'assignment_files': 'Assignment Questions',
+        'submission_files': 'Student Submissions',
+        'study_materials': 'Study Materials',
+        'data': 'Database Files'
+    }
+    
+    for folder, label in folders.items():
+        if os.path.exists(folder):
+            total_size = 0
+            file_count = 0
+            
+            for dirpath, dirnames, filenames in os.walk(folder):
+                for filename in filenames:
+                    file_path = os.path.join(dirpath, filename)
+                    if os.path.isfile(file_path):
+                        try:
+                            total_size += os.path.getsize(file_path)
+                            file_count += 1
+                        except:
+                            continue
+            
+            stats[label] = {
+                'size_mb': round(total_size / (1024 * 1024), 2),
+                'file_count': file_count
+            }
+    
+    return stats
 # ==========================================================
 # ===================== LECTURER ============================
 # ==========================================================
