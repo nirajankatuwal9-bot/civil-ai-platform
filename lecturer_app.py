@@ -175,7 +175,7 @@ def vision_grade(pdf_path, rubric):
         from PIL import Image
         
         #CONFIGURE WITH api KEY
-        genai.configure(api_key=os.getenv(""GEMINI_API_KEY"))
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
         #CONVERT pdf TO IMAGES
         images = convert_from_path(pdf_path)
