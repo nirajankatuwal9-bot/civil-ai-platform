@@ -5,3 +5,4 @@ pdf2image
 bcrypt
 plotly
 google-generativeai
+pymupdf
