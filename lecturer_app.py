@@ -134,6 +134,21 @@ CREATE TABLE IF NOT EXISTS study_materials(
     uploaded_by INTEGER
 )
 """)
+# ANNOUNCEMENTS
+c.execute("""
+CREATE TABLE IF NOT EXISTS announcements(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    message TEXT,
+    semester_id INTEGER,
+    created_by INTEGER,
+    created_at TEXT,
+    priority TEXT
+)
+""")
+
+conn.commit()
+
 
 conn.commit()
 conn.commit()
