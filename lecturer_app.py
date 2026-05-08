@@ -713,17 +713,17 @@ elif role == "student":
             st.error("Student record not found.")
             st.stop()
 
-        sem_id = student_info.iloc[0]["semester_id"]
+        sem_id_raw = student_info.iloc[0]["semester_id"]
 
         #Debug- REmove after fixing 
         st.write(f"DEBUG: Your user_id = {st.session_state.user_id}")
         st.write(f"DEBUG: Your semester_id = {sem_id} (type: {type(sem_id)})")
 
-        if sem_id is None or pd.isna(sem_id):
+        if sem_id is None or str(sem_id_raw).strip() == "":
             st.warning("You are not assigned to a semester.Please Contact your Lecturer")
             st.stop()
 
-        sem_id = int(sem_id)
+        sem_id = int(sem_id_raw)
 
         # Get semester name
         semester_info = pd.read_sql_query(
@@ -742,7 +742,7 @@ elif role == "student":
         JOIN subjects ON assignments.subject_id = subjects.id
         WHERE subjects.semester_id=?
         ORDER BY assignments.deadline ASC
-        """, conn, params=(int(sem_id),))
+        """, conn, params=(sem_id),)
 
         #Debug - remove after fixing
         st.write(f"DEBUG: Found {len(assignments)} assignments for semester {sem_id}")
@@ -750,9 +750,11 @@ elif role == "student":
         if assignments.empty:
             st.info(" 📭 No assignments available for your semester.")
         else:
-            for _, row in assignments.iterrows():
+            for index, row in assignments.iterrows():
+                 # Safe string creation to avoid any SyntaxErrors
+                expander_title = str(row['subject']) + " - " + str(row['title']) + " (Due: " + str(row['deadline']) + ")"
 
-                with st.expander((f"📝 {row['subject']} - {row['title']} (Due: {row['deadline']})"):
+                with st.expander(expander_title):
 
                     # ✅ DOWNLOAD ASSIGNMENT FILE
                     if row["question_file"] and os.path.exists(row["question_file"]):
@@ -772,7 +774,7 @@ elif role == "student":
                     existing_submission = pd.read_sql_query("""
                     SELECT * FROM submissions
                     WHERE assignment_id=? AND student_id=?
-                    """, conn, params=(int(row["id"], st.session_state.user_id)))
+                    """, conn, params=(int(row["id"], int(st.session_state.user_id)))
 
                     if not existing_submission.empty:
                         st.success("✅ You have already submitted this assignment.")
@@ -782,8 +784,8 @@ elif role == "student":
 
                         # Show marks if graded
                         marks = existing_submission.iloc[0]["marks"]
-                        if marks:
-                            st.metric(" 🎯 Marks Awarded", f"{marks}/10)
+                        if marks and str(marks).strip():
+                            st.metric(" 🎯 Marks Awarded", str(marks) + "/10")
                         else:
                             st.info("⏳ Not graded yet")
 
@@ -795,7 +797,7 @@ elif role == "student":
                                     "Download My Submission",
                                     f,
                                     file_name=os.path.basename(submitted_file),
-                                    key=f"download_submission_{row['id']}"
+                                    key="download_sub_" + str(row['id']"
                                 )
 
                     else:
@@ -803,16 +805,16 @@ elif role == "student":
                         uploaded = st.file_uploader(
                             "📤 Upload Your PDF",
                             type=["pdf"],
-                            key=f"upload_{row['id']}"
+                            key="upload_" + strrow['id'])"
                         )
 
-                        if st.button("Submit Assignment", key=f"submit_{row['id']}"):
+                        if st.button("Submit Assignment", key="submit_" + str(row['id'])):
 
                             if not uploaded:
                                 st.warning(" ⚠️ Please upload a PDF file before submitting.")
                             else:
                                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                file_path = f"submission_files/{st.session_state.username}_{row['id']}_{timestamp}"
+                                file_path = "submission_files/" + str(st.session_state.username) + "_" + str(row['id']) + "_" + timestamp + ".pdf"
 
                                 with open(file_path, "wb") as f:
                                     f.write(uploaded.getbuffer())
