@@ -1079,28 +1079,6 @@ if role == "lecturer":
                     st.warning("No semesters available. Please create semesters first.")
         else:
             st.info("No students to update.")
-                if st.button("Update Student Semester", key="update_semester_btn"):
-                    student_id_to_fix = student_options_fix[selected_student_fix]
-                    new_sem_id = int(sems_fix[sems_fix["name"] == semester_to_assign]["id"].values[0])
-                    
-                    try:
-                        c.execute(
-                            "UPDATE users SET semester_id=? WHERE id=?",
-                            (int(new_sem_id), int(student_id_to_fix))
-                        )
-                        conn.commit()
-                        
-                        # Verify the update
-                        verify = pd.read_sql_query(
-                            "SELECT semester_id FROM users WHERE id=?",
-                            conn,
-                            params=(int(student_id_to_fix),)
-                        )
-                        
-                        st.success("✅ Student updated! New semester_id: {}".format(verify.iloc[0]['semester_id']))
-                        st.rerun()
-                    except Exception as e:
-                        st.error("Error updating: {}".format(str(e)))
 
 # ==========================================================
 # ===================== STUDENT =============================
