@@ -511,7 +511,7 @@ if role == "lecturer":
         "Analytics",
         "Manage Students",
         "Study Materials",
-        Storage Management"
+        "Storage Management"
         
     ])
         # DASHBOARD
