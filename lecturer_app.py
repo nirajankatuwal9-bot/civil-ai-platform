@@ -134,9 +134,9 @@ if not st.session_state.logged_in:
 
     st.markdown("""
         <div style='text-align: center; padding-bottom: 20px;'>
-            <h1 style='color: #004b87; font-size: 3em; margin-bottom: 0px;'>🌊 NiraFlow.AI</h1>
+            <h1 style='color: #004b87; font-size: 3em; margin-bottom: 0px;'>🌊 THE N-STREAMLINES</h1>
             <p style='color: #555; font-size: 1.2em; font-weight: 500; margin-top: 5px;'>
-                THE N-STREAMLINES
+                Developed by Nirajan Katuwal
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -145,7 +145,7 @@ if not st.session_state.logged_in:
         user = st.text_input("Username")
         pw = st.text_input("Password", type="password")
 
-        if st.button("Login"):
+        if st.button("Enter the Flow"):
 
             res = pd.read_sql_query(
                 "SELECT * FROM users WHERE username=?",
