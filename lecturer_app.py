@@ -153,7 +153,7 @@ if not st.session_state.logged_in:
                 params=(user,)
             )
 
-            if not res.empty and check_pw(pw, res.iloc[0]["password"]):
+            if not res.empty and check_password(pw, res.iloc[0]["password"]):
                 st.session_state.logged_in = True
                 st.session_state.user_id = res.iloc[0]["id"]
                 st.session_state.role = res.iloc[0]["role"]
