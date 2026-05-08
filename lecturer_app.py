@@ -1993,7 +1993,7 @@ elif role == "student":
                 
                 with st.expander(expander_title):
 
-                    # DOWNLOAD ASSIGNMENT FILE
+                    # 1. DOWNLOAD ASSIGNMENT FILE
                     if row["question_file"] and os.path.exists(row["question_file"]):
                         with open(row["question_file"], "rb") as f:
                             st.download_button(
@@ -2007,10 +2007,19 @@ elif role == "student":
 
                     st.divider()
 
-                    # CHECK IF ALREADY SUBMITTED
-                    if not existing_submission.empty:
-                        st.success("✅ You have already submitted this assignment.")
+                    # 2. DEADLINE CALCULATIONS (NEW)
+                    try:
+                        # Convert stored deadline string to date object
+                        deadline_date = datetime.strptime(str(row['deadline']), '%Y-%m-%d').date()
+                        current_date = datetime.now().date()
+                        is_late = current_date > deadline_date
+                    except:
+                        is_late = False
 
+                    # 3. SUBMISSION STATUS LOGIC
+                    if not existing_submission.empty:
+                        # Case A: Already submitted
+                        st.success("✅ You have already submitted this assignment.")
                         submission_time = existing_submission.iloc[0]["submission_time"]
                         st.write("**Submitted on:** {}".format(submission_time))
 
@@ -2032,17 +2041,19 @@ elif role == "student":
                                     key="download_sub_{}".format(row['id'])
                                 )
 
+                    elif is_late:
+                        # Case B: Not submitted and deadline passed (LOCKDOWN)
+                        st.error("🔒 **Deadline Locked:** This assignment closed on {}.".format(row['deadline']))
+                        st.info("Late submissions are not accepted through the portal. Please contact Er. Nirajan Katuwal.")
+                    
                     else:
-                        # Show deadline warning
-                        days, status, color = get_deadline_status(row['deadline'])
-                        
-                        if status == "Overdue":
-                            st.error("🔴 **This assignment is OVERDUE by {} days!**".format(abs(days)))
-                        elif status == "Due Today":
-                            st.warning("🟠 **This assignment is DUE TODAY!**")
-                        elif status == "Due Soon":
-                            st.info("🟡 **Only {} days left to submit!**".format(days))
-                        
+                        # Case C: Not submitted and deadline is still open
+                        days_left, _, _ = get_deadline_status(row['deadline'])
+                        if days_left == 0:
+                            st.warning("⚠️ **Final Call:** This assignment is due today!")
+                        elif days_left is not None and days_left <= 2:
+                            st.info("🟡 Only {} days left to submit!".format(days_left))
+
                         # UPLOAD NEW SUBMISSION
                         uploaded = st.file_uploader(
                             "📤 Upload Your Answer PDF",
@@ -2050,8 +2061,7 @@ elif role == "student":
                             key="upload_{}".format(row['id'])
                         )
 
-                        if st.button("Submit Assignment", key="submit_{}".format(row['id']), type="primary"):
-
+                        if st.button("Submit Assignment", key="submit_{}".format(row['id']), type="primary", use_container_width=True):
                             if not uploaded:
                                 st.warning("⚠️ Please upload a PDF file before submitting.")
                             else:
@@ -2060,36 +2070,118 @@ elif role == "student":
 
                                 with open(file_path, "wb") as f:
                                     f.write(uploaded.getbuffer())
+                                
+                                # Automatic Watermark branding
+                                apply_watermark(file_path, watermark_text=f"🌊 The N-Streamlines | Student: {st.session_state.username}")
 
                                 c.execute("""
-                                INSERT INTO submissions(
-                                    assignment_id,
-                                    student_id,
-                                    submission_time,
-                                    submission_file,
-                                    marks,
-                                    ai_summary
-                                )
+                                INSERT INTO submissions(assignment_id, student_id, submission_time, submission_file, marks, ai_summary)
                                 VALUES(?,?,?,?,?,?)
-                                """, (
-                                    int(row["id"]),
-                                    int(st.session_state.user_id),
-                                    str(datetime.now()),
-                                    file_path,
-                                    "",
-                                    ""
-                                ))
+                                """, (int(row["id"]), int(st.session_state.user_id), str(datetime.now()), file_path, "", ""))
 
                                 conn.commit()
-                                
-                                # Check if submitted on time
-                                if days >= 0:
-                                    st.success("✅ Assignment submitted successfully on time!")
-                                else:
-                                    st.warning("⚠️ Assignment submitted {} days late.".format(abs(days)))
-                                
+                                st.success("✅ Assignment submitted successfully!")
                                 st.balloons()
                                 st.rerun()
+                #with st.expander(expander_title):=======================================================================
+
+                    # DOWNLOAD ASSIGNMENT FILE
+                   # if row["question_file"] and os.path.exists(row["question_file"]):
+                    #    with open(row["question_file"], "rb") as f:
+                     #       st.download_button(
+                      #          "📥 Download Assignment Question",
+                       #         f,
+                        #        file_name=os.path.basename(row["question_file"]),
+                         #       key="download_q_{}".format(row['id'])
+                          #  )
+                    #else:
+                     #   st.info("No assignment file attached by lecturer.")
+
+                    #st.divider()
+
+                    # CHECK IF ALREADY SUBMITTED
+                    #if not existing_submission.empty:
+                     #   st.success("✅ You have already submitted this assignment.")
+
+                      #  submission_time = existing_submission.iloc[0]["submission_time"]
+                       # st.write("**Submitted on:** {}".format(submission_time))
+
+                        # Show marks if graded
+                        #marks = existing_submission.iloc[0]["marks"]
+                        #if marks and str(marks).strip():
+                         #   st.metric("🎯 Marks Awarded", str(marks) + "/10")
+                        #else:
+                         #   st.info("⏳ Not graded yet")
+
+                        # Allow download of submitted file
+                        #submitted_file = existing_submission.iloc[0]["submission_file"]
+                        #if submitted_file and os.path.exists(submitted_file):
+                         #   with open(submitted_file, "rb") as f:
+                          #      st.download_button(
+                           #         "📥 Download My Submission",
+                           #         f,
+                            #        file_name=os.path.basename(submitted_file),
+                             #       key="download_sub_{}".format(row['id'])
+                              #  )
+
+                    #else:
+                        # Show deadline warning
+                     #   days, status, color = get_deadline_status(row['deadline'])
+                      #  
+                       # if status == "Overdue":
+                        #    st.error("🔴 **This assignment is OVERDUE by {} days!**".format(abs(days)))
+                       # elif status == "Due Today":
+                        #    st.warning("🟠 **This assignment is DUE TODAY!**")
+                        #elif status == "Due Soon":
+                         #   st.info("🟡 **Only {} days left to submit!**".format(days))
+                        
+                        # UPLOAD NEW SUBMISSION
+                        #uploaded = st.file_uploader(
+                         #   "📤 Upload Your Answer PDF",
+                          #  type=["pdf"],
+                           # key="upload_{}".format(row['id'])
+                        #)
+
+                        #if st.button("Submit Assignment", key="submit_{}".format(row['id']), type="primary"):
+
+                         #   if not uploaded:
+                          #      st.warning("⚠️ Please upload a PDF file before submitting.")
+                           # else:
+                            #    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                             #   file_path = "submission_files/" + str(st.session_state.username) + "_" + str(row['id']) + "_" + timestamp + ".pdf"
+
+                              #  with open(file_path, "wb") as f:
+                               #     f.write(uploaded.getbuffer())
+
+                                #c.execute("""
+                                #INSERT INTO submissions(
+                                 #   assignment_id,
+                                  #  student_id,
+                                   # submission_time,
+                                    #submission_file,
+                                    #marks,
+                                    #ai_summary
+                                #)
+                                #VALUES(?,?,?,?,?,?)
+                                #""", (
+                                 #   int(row["id"]),
+                                  #  int(st.session_state.user_id),
+                                   # str(datetime.now()),
+                                    #file_path,
+                                    #"",
+                                    #""
+                                #)#)
+
+                                #conn.commit()
+                                
+                                # Check if submitted on time
+                                #if days >= 0:
+                                 #   st.success("✅ Assignment submitted successfully on time!")
+                                #else:
+                                 #   st.warning("⚠️ Assignment submitted {} days late.".format(abs(days)))
+                                
+                                #st.balloons()
+                                #st.rerun()
 
         # ================= STUDY MATERIALS =================
     with tabs[1]:
