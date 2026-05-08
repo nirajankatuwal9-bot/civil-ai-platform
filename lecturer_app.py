@@ -20,8 +20,8 @@ st.set_page_config(
     layout="wide"
 )
 
-GEMINI_MODEL = "gemini-1.5-flash"
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+#GEMINI_MODEL = "gemini-1.5-flash"
+#client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # ================= FOLDERS =================
 
