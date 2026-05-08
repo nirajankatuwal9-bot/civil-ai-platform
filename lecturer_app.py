@@ -142,19 +142,16 @@ if not st.session_state.logged_in:
         """, unsafe_allow_html=True)
     #-------------------------------------------
     with st.container(border=True):
-        
-                    
+        user = st.text_input("Username")
+        pw = st.text_input("Password", type="password")
 
-    user = st.text_input("Username")
-    pw = st.text_input("Password", type="password")
+        if st.button("Login"):
 
-    if st.button("Login"):
-
-        df = pd.read_sql_query(
-            "SELECT * FROM users WHERE username=?",
-            conn,
-            params=(user,)
-        )
+            df = pd.read_sql_query(
+                "SELECT * FROM users WHERE username=?",
+                conn,
+                params=(user,)
+            )
 
         if not df.empty and check_password(pw, df.iloc[0]["password"]):
             st.session_state.logged_in = True
