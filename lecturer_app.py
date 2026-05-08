@@ -792,6 +792,148 @@ def confirm_delete(item_name, item_type="item"):
                 st.session_state[confirm_key] = False
                 st.rerun()
         return False
+# ================= SEARCH FUNCTIONALITY =================
+
+def search_students(query, semester_id=None):
+    """
+    Search students by name or username
+    Returns: DataFrame of matching students
+    """
+    query = query.strip().lower()
+    
+    if not query:
+        return pd.DataFrame()
+    
+    if semester_id:
+        results = pd.read_sql_query("""
+        SELECT users.id, users.full_name, users.username, semesters.name as semester
+        FROM users
+        LEFT JOIN semesters ON users.semester_id = semesters.id
+        WHERE users.role='student' 
+        AND users.semester_id=?
+        AND (LOWER(users.full_name) LIKE ? OR LOWER(users.username) LIKE ?)
+        ORDER BY users.full_name ASC
+        """, conn, params=(semester_id, '%{}%'.format(query), '%{}%'.format(query)))
+    else:
+        results = pd.read_sql_query("""
+        SELECT users.id, users.full_name, users.username, semesters.name as semester
+        FROM users
+        LEFT JOIN semesters ON users.semester_id = semesters.id
+        WHERE users.role='student' 
+        AND (LOWER(users.full_name) LIKE ? OR LOWER(users.username) LIKE ?)
+        ORDER BY users.full_name ASC
+        """, conn, params=('%{}%'.format(query), '%{}%'.format(query)))
+    
+    return results
+
+
+def search_assignments(query):
+    """
+    Search assignments by title or subject
+    Returns: DataFrame of matching assignments
+    """
+    query = query.strip().lower()
+    
+    if not query:
+        return pd.DataFrame()
+    
+    results = pd.read_sql_query("""
+    SELECT 
+        assignments.id,
+        assignments.title,
+        subjects.name as subject,
+        semesters.name as semester,
+        assignments.deadline
+    FROM assignments
+    JOIN subjects ON assignments.subject_id = subjects.id
+    JOIN semesters ON subjects.semester_id = semesters.id
+    WHERE LOWER(assignments.title) LIKE ? OR LOWER(subjects.name) LIKE ?
+    ORDER BY assignments.deadline DESC
+    """, conn, params=('%{}%'.format(query), '%{}%'.format(query)))
+    
+    return results
+# ================= EDIT ASSIGNMENT =================
+
+def update_assignment(assignment_id, new_title, new_deadline):
+    """
+    Update assignment title and deadline
+    Returns: (success, message)
+    """
+    try:
+        c.execute("""
+        UPDATE assignments 
+        SET title=?, deadline=?
+        WHERE id=?
+        """, (new_title.strip(), str(new_deadline), int(assignment_id)))
+        
+        conn.commit()
+        return True, "Assignment updated successfully"
+    except Exception as e:
+        return False, "Update failed: {}".format(str(e))
+# ================= STUDENT PROFILE =================
+
+def get_student_profile(student_id):
+    """
+    Get complete student profile with all statistics
+    Returns: dict with student data
+    """
+    try:
+        # Basic info
+        student_info = pd.read_sql_query("""
+        SELECT users.*, semesters.name as semester
+        FROM users
+        LEFT JOIN semesters ON users.semester_id = semesters.id
+        WHERE users.id=?
+        """, conn, params=(int(student_id),))
+        
+        if student_info.empty:
+            return None
+        
+        # Submission stats
+        submissions = pd.read_sql_query("""
+        SELECT 
+            subjects.name as subject,
+            assignments.title as assignment,
+            assignments.deadline,
+            submissions.submission_time,
+            submissions.marks
+        FROM submissions
+        JOIN assignments ON submissions.assignment_id = assignments.id
+        JOIN subjects ON assignments.subject_id = subjects.id
+        WHERE submissions.student_id=?
+        ORDER BY submissions.submission_time DESC
+        """, conn, params=(int(student_id),))
+        
+        # Calculate statistics
+        total_submissions = len(submissions)
+        graded = submissions[submissions['marks'].notna() & (submissions['marks'] != '')]
+        total_graded = len(graded)
+        
+        if total_graded > 0:
+            graded['marks_numeric'] = pd.to_numeric(graded['marks'], errors='coerce')
+            avg_marks = graded['marks_numeric'].mean()
+            highest = graded['marks_numeric'].max()
+            lowest = graded['marks_numeric'].min()
+        else:
+            avg_marks = 0
+            highest = 0
+            lowest = 0
+        
+        return {
+            'info': student_info.iloc[0].to_dict(),
+            'submissions': submissions,
+            'stats': {
+                'total_submissions': total_submissions,
+                'total_graded': total_graded,
+                'average': round(avg_marks, 2) if total_graded > 0 else 0,
+                'highest': highest,
+                'lowest': lowest
+            }
+        }
+    
+    except Exception as e:
+        st.error("Error loading profile: {}".format(str(e)))
+        return None
 # ==========================================================
 # ===================== LECTURER ============================
 # ==========================================================
@@ -807,7 +949,8 @@ if role == "lecturer":
         "Analytics",
         "Manage Students",
         "Study Materials",
-        "Storage Management"
+        "Storage Management",
+        "Student Profiles"
         
     ])
         # DASHBOARD
@@ -1407,6 +1550,41 @@ if role == "lecturer":
                         
                         st.divider()
                         
+                        # ========== EDIT ASSIGNMENT ==========
+                        with st.expander("✏️ Edit Assignment Details"):
+                            
+                            col_edit1, col_edit2 = st.columns(2)
+                            
+                            with col_edit1:
+                                new_title = st.text_input(
+                                    "New Title",
+                                    value=assignment['Title'],
+                                    key="edit_title_{}".format(assignment['ID'])
+                                )
+                            
+                            with col_edit2:
+                                current_deadline = datetime.strptime(assignment['Deadline'], '%Y-%m-%d').date()
+                                new_deadline = st.date_input(
+                                    "New Deadline",
+                                    value=current_deadline,
+                                    key="edit_deadline_{}".format(assignment['ID'])
+                                )
+                            
+                            if st.button("💾 Save Changes", key="save_edit_{}".format(assignment['ID']), type="primary"):
+                                
+                                if not new_title.strip():
+                                    st.error("Title cannot be empty")
+                                elif new_title == assignment['Title'] and str(new_deadline) == assignment['Deadline']:
+                                    st.info("No changes made")
+                                else:
+                                    success, message = update_assignment(assignment['ID'], new_title, new_deadline)
+                                    
+                                    if success:
+                                        st.success("✅ {}".format(message))
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ {}".format(message))
+                        
                         # Delete button
                         col_del1, col_del2 = st.columns([2, 1])
                         
@@ -1800,7 +1978,44 @@ if role == "lecturer":
         
         # TEMPORARY FIX BUTTON - Remove after fixing all students
         st.subheader("⚠️ Emergency Fix for Existing Students")
+        st.divider()
         
+        # ========== SEARCH STUDENTS ==========
+        st.subheader("🔍 Search Students")
+        
+        col_search1, col_search2 = st.columns([2, 1])
+        
+        with col_search1:
+            search_query = st.text_input(
+                "Search by name or username",
+                placeholder="e.g., John or john123",
+                key="search_students_input"
+            )
+        
+        with col_search2:
+            sems_search = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+            search_sem_filter = st.selectbox(
+                "Filter by Semester",
+                ["All"] + sems_search["name"].tolist(),
+                key="search_sem_filter"
+            )
+        
+        if search_query:
+            sem_filter_id = None
+            if search_sem_filter != "All":
+                sem_filter_id = int(sems_search[sems_search["name"] == search_sem_filter]["id"].values[0])
+            
+            search_results = search_students(search_query, sem_filter_id)
+            
+            if search_results.empty:
+                st.info("🔍 No students found matching '{}'".format(search_query))
+            else:
+                st.success("✅ Found {} student(s)".format(len(search_results)))
+                st.dataframe(
+                    search_results[['full_name', 'username', 'semester']],
+                    use_container_width=True,
+                    hide_index=True
+                )
         if st.button("🔧 Fix ALL Students with NULL semester"):
             # Get first semester as default
             default_sem = pd.read_sql_query("SELECT id FROM semesters ORDER BY id ASC LIMIT 1", conn)
@@ -2603,6 +2818,125 @@ if role == "lecturer":
                         'size_kb': 'Size (KB)'
                     }
                 )
+    # STUDENT PROFILES
+    with tabs[9]:
+        
+        st.title("👤 Student Profile Viewer")
+        
+        # Select student
+        all_students = pd.read_sql_query("""
+        SELECT users.id, users.username, users.full_name, semesters.name as semester
+        FROM users
+        LEFT JOIN semesters ON users.semester_id = semesters.id
+        WHERE users.role='student'
+        ORDER BY users.username ASC
+        """, conn)
+        
+        if all_students.empty:
+            st.info("No students registered yet.")
+        else:
+            # Search or select
+            col_profile1, col_profile2 = st.columns([2, 1])
+            
+            with col_profile1:
+                search_profile = st.text_input(
+                    "🔍 Search student by name or username",
+                    key="search_profile"
+                )
+            
+            with col_profile2:
+                if search_profile:
+                    filtered = all_students[
+                        all_students['username'].str.contains(search_profile, case=False) |
+                        all_students['full_name'].str.contains(search_profile, case=False)
+                    ]
+                else:
+                    filtered = all_students
+            
+            if filtered.empty:
+                st.warning("No students found")
+            else:
+                student_options = {
+                    "{} ({}) - {}".format(row['username'], row['full_name'], row['semester']): row['id']
+                    for _, row in filtered.iterrows()
+                }
+                
+                selected = st.selectbox("Select Student", list(student_options.keys()))
+                
+                if selected:
+                    student_id = student_options[selected]
+                    profile = get_student_profile(student_id)
+                    
+                    if profile:
+                        st.divider()
+                        
+                        # Header
+                        st.markdown("""
+                        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                                    padding: 20px; border-radius: 10px; color: white;'>
+                            <h2 style='margin:0;'>{}</h2>
+                            <p style='margin:5px 0 0 0;'>@{} | {}</p>
+                        </div>
+                        """.format(
+                            profile['info']['full_name'],
+                            profile['info']['username'],
+                            profile['info']['semester']
+                        ), unsafe_allow_html=True)
+                        
+                        st.write("")
+                        
+                        # Statistics
+                        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+                        
+                        with col_stat1:
+                            st.metric("📤 Total Submissions", profile['stats']['total_submissions'])
+                        
+                        with col_stat2:
+                            st.metric("✅ Graded", profile['stats']['total_graded'])
+                        
+                        with col_stat3:
+                            st.metric("📊 Average Score", "{}/10".format(profile['stats']['average']))
+                        
+                        with col_stat4:
+                            st.metric("🏆 Best Score", "{}/10".format(profile['stats']['highest']))
+                        
+                        st.divider()
+                        
+                        # Submissions
+                        st.subheader("📋 Submission History")
+                        
+                        if profile['submissions'].empty:
+                            st.info("No submissions yet")
+                        else:
+                            # Add status column
+                            def get_status(row):
+                                if row['marks'] and str(row['marks']).strip():
+                                    return "✅ Graded ({}/10)".format(row['marks'])
+                                else:
+                                    return "⏳ Pending"
+                            
+                            display_df = profile['submissions'].copy()
+                            display_df['Status'] = display_df.apply(get_status, axis=1)
+                            
+                            st.dataframe(
+                                display_df[['subject', 'assignment', 'deadline', 'submission_time', 'Status']],
+                                use_container_width=True,
+                                hide_index=True
+                            )
+                            
+                            # Performance chart
+                            graded = display_df[display_df['marks'].notna() & (display_df['marks'] != '')]
+                            
+                            if not graded.empty:
+                                st.divider()
+                                st.subheader("📈 Performance Over Time")
+                                
+                                graded['marks_numeric'] = pd.to_numeric(graded['marks'], errors='coerce')
+                                graded_sorted = graded.sort_values('submission_time')
+                                
+                                st.line_chart(
+                                    graded_sorted.set_index('assignment')['marks_numeric']
+                                )
 # ==========================================================
 # ===================== STUDENT =============================
 # ==========================================================
