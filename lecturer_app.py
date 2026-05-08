@@ -147,17 +147,17 @@ if not st.session_state.logged_in:
 
         if st.button("Login"):
 
-            df = pd.read_sql_query(
+            res = pd.read_sql_query(
                 "SELECT * FROM users WHERE username=?",
                 conn,
                 params=(user,)
             )
 
-        if not df.empty and check_password(pw, df.iloc[0]["password"]):
+        if not res.empty and check_pw(pw, df.iloc[0]["password"]):
             st.session_state.logged_in = True
-            st.session_state.user_id = df.iloc[0]["id"]
-            st.session_state.role = df.iloc[0]["role"]
-            st.session_state.username = df.iloc[0]["username"]
+            st.session_state.user_id = res.iloc[0]["id"]
+            st.session_state.role = res.iloc[0]["role"]
+            st.session_state.username = res.iloc[0]["username"]
             st.rerun()
         else:
             st.error("Invalid credentials")
