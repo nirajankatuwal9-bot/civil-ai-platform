@@ -797,7 +797,7 @@ elif role == "student":
                                     "Download My Submission",
                                     f,
                                     file_name=os.path.basename(submitted_file),
-                                    key="download_sub_" + str(row['id']"
+                                    key="download_sub_" + str(row['id'])"
                                 )
 
                     else:
