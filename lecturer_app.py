@@ -512,7 +512,7 @@ if role == "lecturer":
                                                     (marks,result,row["id"])
                                                 )
                                                 conn.commit()
-                                                st.success(f"✅ Updated marks: {marks}/10)"
+                                                st.success(f"✅ Updated marks: {marks}/10")
                                                 st.rerun()
                                             else:
                                                 st.warning("⚠️ Could not extract marks from AI response")
