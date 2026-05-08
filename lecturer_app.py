@@ -2264,59 +2264,125 @@ elif role == "student":
                                     st.error("File not found")
                     
                     st.divider()
-    # ================= RESULTS =================
+    # ================= RESULTS (WITH MISSING/OVERDUE LOGIC) =================
     with tabs[2]:
-        st.subheader("📝 My Graded Results")
+        st.subheader("📝 My Academic Performance Record")
 
-        # We must JOIN submissions to assignments, then assignments to subjects
-        # to get the subject name.
+        # We query ALL assignments for the student's semester 
+        # and LEFT JOIN with submissions to see what's missing
         query = """
         SELECT 
             subjects.name as Subject, 
             assignments.title as Assignment, 
+            assignments.deadline as Deadline,
             submissions.marks as Marks,
-            submissions.submission_time as Date
-        FROM submissions
-        INNER JOIN assignments ON submissions.assignment_id = assignments.id
-        INNER JOIN subjects ON assignments.subject_id = subjects.id
-        WHERE submissions.student_id = ? AND submissions.marks IS NOT NULL AND submissions.marks != ''
-        ORDER BY submissions.id DESC
+            submissions.submission_time as Submitted_On
+        FROM assignments
+        JOIN subjects ON assignments.subject_id = subjects.id
+        LEFT JOIN submissions ON assignments.id = submissions.assignment_id AND submissions.student_id = ?
+        WHERE subjects.semester_id = ?
+        ORDER BY assignments.deadline DESC
         """
 
         try:
-            # Ensure user_id is passed as a clean integer
             student_id = int(st.session_state.user_id)
-            
-            results = pd.read_sql_query(query, conn, params=(student_id,))
+            # We already have sem_id from the Assignments tab logic earlier in the script
+            results_df = pd.read_sql_query(query, conn, params=(student_id, sem_id))
 
-            if results.empty:
-                st.info("No graded results found yet. Check back once the lecturer has processed your submission.")
+            if results_df.empty:
+                st.info("No assignments have been posted for your semester yet.")
             else:
-                # Optional: Format the marks to look better
-                results['Marks'] = results['Marks'].apply(lambda x: f"{x}/10")
+                # Process the dataframe to handle missed assignments
+                display_data = []
+                current_date = datetime.now().date()
+
+                for _, row in results_df.iterrows():
+                    deadline_date = datetime.strptime(row['Deadline'], '%Y-%m-%d').date()
+                    
+                    status = ""
+                    score = ""
+                    
+                    if row['Marks'] is not None and str(row['Marks']).strip() != "":
+                        # Case 1: Graded
+                        status = "✅ Graded"
+                        score = f"{row['Marks']}/10"
+                    elif row['Submitted_On'] is not None:
+                        # Case 2: Submitted but not graded
+                        status = "⏳ Pending Grade"
+                        score = "N/A"
+                    elif current_date > deadline_date:
+                        # Case 3: Not submitted and Deadline passed
+                        status = "❌ MISSED (Overdue)"
+                        score = "0/10"
+                    else:
+                        # Case 4: Not submitted but still has time
+                        status = "📖 Not Submitted Yet"
+                        score = "Pending"
+
+                    display_data.append({
+                        "Subject": row['Subject'],
+                        "Assignment": row['Assignment'],
+                        "Deadline": row['Deadline'],
+                        "Status": status,
+                        "Marks": score
+                    })
+
+                # Create a clean display dataframe
+                final_df = pd.DataFrame(display_data)
                 
+                # Apply styling/colors for the status
                 st.dataframe(
-                    results, 
+                    final_df, 
                     use_container_width=True, 
                     hide_index=True
                 )
+                
+                # Add a small warning if there are missed assignments
+                missed_count = len(final_df[final_df['Status'] == "❌ MISSED (Overdue)"])
+                if missed_count > 0:
+                    st.warning(f"⚠️ You have **{missed_count}** missed assignment(s). These are recorded as 0 until you contact your lecturer.")
+
         except Exception as e:
-            st.error("Database Connection Error. Please notify the administrator.")
+            st.error("Error loading results. Please contact administration.")
+            # st.write(e) # Debug
+    # ================= RESULTS =================
+    #with tabs[2]:
+     #   st.subheader("📝 My Graded Results")
+
+        # We must JOIN submissions to assignments, then assignments to subjects
+        # to get the subject name.
+      #  query = """
+       # SELECT 
+        #    subjects.name as Subject, 
+         #   assignments.title as Assignment, 
+          #  submissions.marks as Marks,
+           # submissions.submission_time as Date
+        #FROM submissions
+        #INNER JOIN assignments ON submissions.assignment_id = assignments.id
+        #INNER JOIN subjects ON assignments.subject_id = subjects.id
+        #WHERE submissions.student_id = ? AND submissions.marks IS NOT NULL AND submissions.marks != ''
+        #ORDER BY submissions.id DESC
+        #"""
+
+        #try:
+            # Ensure user_id is passed as a clean integer
+         #   student_id = int(st.session_state.user_id)
+            
+          #  results = pd.read_sql_query(query, conn, params=(student_id,))
+
+           # if results.empty:
+            #    st.info("No graded results found yet. Check back once the lecturer has processed your submission.")
+            #else:
+                # Optional: Format the marks to look better
+             #   results['Marks'] = results['Marks'].apply(lambda x: f"{x}/10")
+                
+              #  st.dataframe(
+               #     results, 
+                #    use_container_width=True, 
+                 #   hide_index=True
+                #)
+        #except Exception as e:
+         #   st.error("Database Connection Error. Please notify the administrator.")
             # For your own debugging, you can uncomment the line below:
             # st.write(f"Debug Info: {e}")
-    # ================= RESULTS =================
-    #with tabs[2]:  # ← Changed from tabs[1] to tabs[2]
-        
-        #results = pd.read_sql_query("""
-        #SELECT subjects.name as Subject, assignments.title, submissions.marks
-        #FROM submissions
-        #JOIN assignments ON submissions.assignment_id = assignments.id
-        #JOIN subjects ON assignment.subject_id = subjects.id
-        #WHERE submissions.student_id=?
-        #ORDER BY submissions.id DESC
-        #""", #conn, #params=(int(st.session_state.user_id,)))
-
-        #if results.empty:
-            #st.info("No results available yet.")
-        #else:
-            #st.dataframe(results, use_container_width=True, hide_index=True)
+    
