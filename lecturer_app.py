@@ -153,7 +153,7 @@ if not st.session_state.logged_in:
                 params=(user,)
             )
 
-            if not res.empty and check_pw(pw, df.iloc[0]["password"]):
+            if not res.empty and check_pw(pw, res.iloc[0]["password"]):
                 st.session_state.logged_in = True
                 st.session_state.user_id = res.iloc[0]["id"]
                 st.session_state.role = res.iloc[0]["role"]
@@ -164,13 +164,45 @@ if not st.session_state.logged_in:
 
         st.stop()
 
-# ================= LOGOUT =================
+# ================= SYSTEM & SIDEBAR =================
 
-st.sidebar.write(f"👤 {st.session_state.username} ({st.session_state.role})")
+with st.sidebar:
+    # 1. Profile & Logout
+    st.write(f"👤 **{st.session_state.username}** ({str(st.session_state.role).capitalize()})")
+    st.divider()
+    
+    if st.button("Logout", use_container_width=True):
+        st.session_state.clear()
+        st.rerun()
 
-if st.sidebar.button("Logout"):
-    st.session_state.clear()
-    st.rerun()
+    # 2. Lecturer Emergency Controls
+    if st.session_state.role == "lecturer":
+        with st.expander("⚙️ Danger Zone"):
+            if st.button("🧨 Wipe Database", use_container_width=True):
+                tables = ["users", "submissions", "assignments", "subjects", "semesters"]
+                for t in tables: c.execute(f"DROP TABLE IF EXISTS {t}")
+                conn.commit(); st.rerun()
+
+    # 3. Global Developer Branding (Pushed to the bottom)
+    st.markdown("<br><br><br><br>", unsafe_allow_html=True)
+    
+    st.markdown("""
+        <div style='text-align: center; padding: 15px; background-color: #ffffff; border: 1px solid #e1e4e8; border-radius: 10px; border-top: 4px solid #004b87;'>
+            <h4 style='color: #004b87; margin-bottom: 5px; font-size: 1.1em;'>🌊 NiraFlow.AI</h4>
+            <p style='font-size: 0.85em; color: #555; margin-bottom: 10px; line-height: 1.4;'>
+                Advanced Hydro-Informatics &<br>Learning Management
+            </p>
+            <div style='background-color: #f4f7f9; padding: 8px; border-radius: 5px;'>
+                <p style='font-size: 0.8em; color: #333; margin-bottom: 0;'>
+                    Developed & Architected by<br>
+                    <strong>Er. Nirajan Katuwal</strong>
+                </p>
+            </div>
+            <p style='font-size: 0.7em; color: #999; margin-top: 10px; margin-bottom: 0;'>
+                © 2026 | Version 1.0.0 Pro
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
 
 role = st.session_state.role
 
