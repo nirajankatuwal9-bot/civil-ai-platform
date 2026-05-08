@@ -703,43 +703,64 @@ if role == "lecturer":
 
         st.divider()
 
-        st.subheader("Student List")
+st.subheader("Student List")
 
-        students = pd.read_sql_query("""
-        SELECT users.id, users.full_name, users.username, users.semester_id, semesters.name as semester
-        FROM users
-        LEFT JOIN semesters ON users.semester_id = semesters.id
-        WHERE users.role='student'
-        ORDER BY semesters.name ASC, users.username ASC
+# Enhanced query to debug
+students = pd.read_sql_query("""
+SELECT users.id, users.full_name, users.username, users.semester_id, semesters.name as semester
+FROM users
+LEFT JOIN semesters ON users.semester_id = semesters.id
+WHERE users.role='student'
+ORDER BY users.id DESC
+""", conn)
+
+if students.empty:
+    st.info("No students added yet.")
+else:
+    # Show ALL columns including semester_id for debugging
+    st.dataframe(
+        students,
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    # Show raw database data
+    with st.expander("🔍 Debug: Raw Database Data"):
+        raw_users = pd.read_sql_query("""
+        SELECT id, username, full_name, semester_id, role 
+        FROM users 
+        WHERE role='student'
+        ORDER BY id DESC
         """, conn)
+        st.write("**Users table (students only):**")
+        st.dataframe(raw_users, use_container_width=True, hide_index=True)
+        
+        all_semesters = pd.read_sql_query("SELECT * FROM semesters", conn)
+        st.write("**Semesters table:**")
+        st.dataframe(all_semesters, use_container_width=True, hide_index=True)
 
-        if students.empty:
-            st.info("No students added yet.")
-        else:
-            st.dataframe(
-                students[["semester", "username", "full_name", "semester_id"]],
-                use_container_width=True,
-                hide_index=True
-            )
+    student_options = {
+        "{} | {} | {}".format(
+            row['semester'] if row['semester'] else 'NO SEMESTER', 
+            row['username'], 
+            row['full_name']
+        ): row['id']
+        for _, row in students.iterrows()
+    }
 
-            student_options = {
-                "{} | {} | {}".format(row['semester'], row['username'], row['full_name']): row['id']
-                for _, row in students.iterrows()
-            }
+    selected_student = st.selectbox(
+        "Select Student to Delete",
+        list(student_options.keys()),
+        key="delete_student_select"
+    )
 
-            selected_student = st.selectbox(
-                "Select Student to Delete",
-                list(student_options.keys()),
-                key="delete_student_select"
-            )
-
-            if st.button("Delete Selected Student"):
-                student_id = student_options[selected_student]
-                c.execute("DELETE FROM submissions WHERE student_id=?", (student_id,))
-                c.execute("DELETE FROM users WHERE id=?", (student_id,))
-                conn.commit()
-                st.success("Student deleted successfully.")
-                st.rerun()
+    if st.button("Delete Selected Student"):
+        student_id = student_options[selected_student]
+        c.execute("DELETE FROM submissions WHERE student_id=?", (student_id,))
+        c.execute("DELETE FROM users WHERE id=?", (student_id,))
+        conn.commit()
+        st.success("Student deleted successfully.")
+        st.rerun()
 
 # ==========================================================
 # ===================== STUDENT =============================
