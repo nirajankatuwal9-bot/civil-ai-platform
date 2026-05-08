@@ -440,131 +440,138 @@ if role == "lecturer":
             st.info("No graded submissions yet.")
 
     # MANAGE STUDENTS
-    with tabs[5]:
+with tabs[5]:
 
-        st.subheader("Add Student Manually")
+    st.subheader("Add Student Manually")
 
-        col1, col2 = st.columns(2)
+    col1, col2 = st.columns(2)
 
-        with col1:
-            student_name = st.text_input("Full Name", key="student_name")
-            username = st.text_input("Username", key="student_username")
-            password = st.text_input("Password", type="password", key="student_password")
+    with col1:
+        student_name = st.text_input("Full Name", key="student_name")
+        username = st.text_input("Username", key="student_username")
+        password = st.text_input("Password", type="password", key="student_password")
 
-        with col2:
-            sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+    with col2:
+        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
 
-            if sems.empty:
-                st.warning("Please create semesters first.")
-            else:
-                semester_name = st.selectbox("Assign Semester", sems["name"], key="student_semester")
-                semester_id = sems[sems["name"] == semester_name]["id"].values[0]
-
-                if st.button("Create Student"):
-
-                    if not username or not password:
-                        st.error("Username and password required.")
-                    else:
-                        try:
-                            c.execute("""
-                            INSERT INTO users(full_name, username, password, role, semester_id)
-                            VALUES(?,?,?,?,?)
-                            """, (
-                                student_name.strip(),
-                                username.strip(),
-                                hash_password(password.strip()),
-                                "student",
-                                int(semester_id)
-                            ))
-                            conn.commit()
-                            st.success("✅ Student created successfully.")
-                            st.rerun()
-                        except sqlite3.IntegrityError:
-                            st.error("Username already exists.")
-
-        st.divider()
-
-        st.subheader("Bulk Upload Students via CSV")
-        st.info("CSV format: name,username,password,semester")
-
-        csv_file = st.file_uploader("Upload CSV", type=["csv"], key="student_csv")
-
-        if csv_file:
-            df_csv = pd.read_csv(csv_file)
-            required_cols = {"name", "username", "password", "semester"}
-
-            if not required_cols.issubset(df_csv.columns):
-                st.error("CSV must contain columns: name, username, password, semester")
-            else:
-                if st.button("Upload Students"):
-                    sems = pd.read_sql_query("SELECT * FROM semesters", conn)
-                    success_count = 0
-
-                    for _, row in df_csv.iterrows():
-                        sem_match = sems[sems["name"] == row["semester"]]
-
-                        if sem_match.empty:
-                            continue
-
-                        sem_id = sem_match["id"].values[0]
-
-                        try:
-                            c.execute("""
-                            INSERT INTO users(full_name, username, password, role, semester_id)
-                            VALUES(?,?,?,?,?)
-                            """, (
-                                row["name"],
-                                row["username"],
-                                hash_password(str(row["password"])),
-                                "student",
-                                sem_id
-                            ))
-                            success_count += 1
-                        except:
-                            continue
-
-                    conn.commit()
-                    st.success(f"✅ {success_count} students uploaded successfully.")
-                    st.rerun()
-
-        st.divider()
-
-        st.subheader("Student List")
-
-        students = pd.read_sql_query("""
-        SELECT users.id, users.full_name, users.username, semesters.name as semester
-        FROM users
-        JOIN semesters ON users.semester_id = semesters.id
-        WHERE users.role='student'
-        ORDER BY semesters.name ASC, users.username ASC
-        """, conn)
-
-        if students.empty:
-            st.info("No students added yet.")
+        if sems.empty:
+            st.warning("Please create semesters first.")
         else:
-            st.dataframe(
-                students[["semester", "username", "full_name"]],
-                use_container_width=True,
-                hide_index=True
-            )
+            semester_name = st.selectbox("Assign Semester", sems["name"], key="student_semester")
+            semester_id = int(sems[sems["name"] == semester_name]["id"].values[0])  # ← Convert to int
 
-            student_options = {
-                f"{row['semester']} | {row['username']} | {row['full_name']}": row['id']
-                for _, row in students.iterrows()
-            }
+            if st.button("Create Student"):
 
-            selected_student = st.selectbox(
-                "Select Student to Delete",
-                list(student_options.keys()),
-                key="delete_student_select"
-            )
+                if not username or not password:
+                    st.error("Username and password required.")
+                else:
+                    try:
+                        c.execute("""
+                        INSERT INTO users(full_name, username, password, role, semester_id)
+                        VALUES(?,?,?,?,?)
+                        """, (
+                            student_name.strip(),
+                            username.strip(),
+                            hash_password(password.strip()),
+                            "student",
+                            int(semester_id)  # ← Ensure it's int
+                        ))
+                        conn.commit()
+                        st.success(f"✅ Student '{username}' created and assigned to '{semester_name}'")
+                        st.rerun()
+                    except sqlite3.IntegrityError:
+                        st.error("Username already exists.")
+                    except Exception as e:
+                        st.error(f"Error creating student: {e}")
 
-            if st.button("Delete Selected Student"):
-                student_id = student_options[selected_student]
-                c.execute("DELETE FROM users WHERE id=?", (student_id,))
+    st.divider()
+
+    st.subheader("Bulk Upload Students via CSV")
+    st.info("CSV format: name,username,password,semester")
+
+    csv_file = st.file_uploader("Upload CSV", type=["csv"], key="student_csv")
+
+    if csv_file:
+        df_csv = pd.read_csv(csv_file)
+        required_cols = {"name", "username", "password", "semester"}
+
+        if not required_cols.issubset(df_csv.columns):
+            st.error("CSV must contain columns: name, username, password, semester")
+        else:
+            if st.button("Upload Students"):
+                sems = pd.read_sql_query("SELECT * FROM semesters", conn)
+                success_count = 0
+                error_count = 0
+
+                for _, row in df_csv.iterrows():
+                    sem_match = sems[sems["name"] == row["semester"]]
+
+                    if sem_match.empty:
+                        error_count += 1
+                        continue
+
+                    sem_id = int(sem_match["id"].values[0])  # ← Convert to int
+
+                    try:
+                        c.execute("""
+                        INSERT INTO users(full_name, username, password, role, semester_id)
+                        VALUES(?,?,?,?,?)
+                        """, (
+                            row["name"],
+                            row["username"],
+                            hash_password(str(row["password"])),
+                            "student",
+                            int(sem_id)  # ← Ensure int
+                        ))
+                        success_count += 1
+                    except:
+                        error_count += 1
+                        continue
+
                 conn.commit()
-                st.success("✅ Student deleted successfully.")
+                st.success(f"✅ {success_count} students uploaded successfully. {error_count} failed.")
                 st.rerun()
+
+    st.divider()
+
+    st.subheader("Student List")
+
+    students = pd.read_sql_query("""
+    SELECT users.id, users.full_name, users.username, users.semester_id, semesters.name as semester
+    FROM users
+    LEFT JOIN semesters ON users.semester_id = semesters.id
+    WHERE users.role='student'
+    ORDER BY semesters.name ASC, users.username ASC
+    """, conn)
+
+    if students.empty:
+        st.info("No students added yet.")
+    else:
+        # Show debug info
+        st.dataframe(
+            students[["semester", "username", "full_name", "semester_id"]],
+            use_container_width=True,
+            hide_index=True
+        )
+
+        student_options = {
+            f"{row['semester']} | {row['username']} | {row['full_name']}": row['id']
+            for _, row in students.iterrows()
+        }
+
+        selected_student = st.selectbox(
+            "Select Student to Delete",
+            list(student_options.keys()),
+            key="delete_student_select"
+        )
+
+        if st.button("Delete Selected Student"):
+            student_id = student_options[selected_student]
+            c.execute("DELETE FROM submissions WHERE student_id=?", (student_id,))  # ← Delete submissions first
+            c.execute("DELETE FROM users WHERE id=?", (student_id,))
+            conn.commit()
+            st.success("✅ Student deleted successfully.")
+            st.rerun()
 
 # ==========================================================
 # ===================== STUDENT =============================
