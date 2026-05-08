@@ -1268,52 +1268,54 @@ if role == "lecturer":
                 st.dataframe(subject_stats, use_container_width=True)
 
                 st.divider()
-                # --- STEP 3: CREATE HORIZONTAL (PIVOT) VIEW ---
+                # --- STEP 3: CREATE HORIZONTAL STATUS BOARD ---
                 st.divider()
-                st.subheader("📋 Master Academic Record (Clean View)")
+                st.subheader("📋 Master Submission & Grade Board")
                 
                 if not df.empty:
-                    # 1. Prepare numeric data for calculation
-                    calc_df = df.copy()
-                    calc_df['num_marks'] = pd.to_numeric(calc_df['Marks'], errors='coerce').fillna(0)
+                    # 1. Create a display string for each cell: 
+                    # If Submitted -> Show Marks
+                    # If Not Submitted & Overdue -> Show MISSED
+                    # If Not Submitted & Future -> Show Pending
+                    def format_cell(row):
+                        if row['Status'] == "✅ Submitted":
+                            return str(row['Marks'])
+                        elif row['Status'] == "🔴 MISSED":
+                            return "🔴 MISSED"
+                        else:
+                            return "🟡 Pending"
 
-                    # 2. Pivot the main table (Rows: Student/Subject, Cols: Assignments)
-                    # This puts multiple assignments of the same subject on one line
-                    pivot_table = df.pivot_table(
+                    display_df = df.copy()
+                    display_df['Display_Value'] = display_df.apply(format_cell, axis=1)
+
+                    # 2. Pivot the table
+                    # Index: Student & Subject | Columns: Assignment Titles | Values: Our formatted string
+                    status_pivot = display_df.pivot_table(
                         index=['Student_Name', 'Username', 'Subject'],
                         columns='Assignment',
-                        values='Marks',
+                        values='Display_Value',
                         aggfunc='first'
                     ).reset_index()
 
-                    # 3. Calculate Average per Student per Subject
-                    avg_stats = calc_df.groupby(['Student_Name', 'Username', 'Subject'])['num_marks'].mean().round(2).reset_index()
-                    avg_stats.rename(columns={'num_marks': 'Subject_Avg'}, inplace=True)
-
-                    # 4. Merge Average back to the Pivot Table
-                    final_view = pd.merge(pivot_table, avg_stats, on=['Student_Name', 'Username', 'Subject'])
-
-                    # 5. Add a logic-based Status Label
-                    def get_overall_status(avg):
-                        if avg >= 4: return "🟢 Good Standing"
-                        if avg > 0: return "🟡 At Risk"
-                        return "🔴 Negligent (0 Submissions)"
+                    # 3. Clean up column names and display
+                    st.info("💡 **Legend:** Numeric value = Grade received | 🔴 MISSED = Deadline passed | 🟡 Pending = Due in future")
                     
-                    final_view['Performance_Status'] = final_view['Subject_Avg'].apply(get_overall_status)
-
-                    # --- DISPLAY ---
-                    st.info("💡 Tip: Horizontal view groups all assignments of the same subject into a single row per student.")
                     st.dataframe(
-                        final_view, 
+                        status_pivot, 
                         use_container_width=True, 
                         hide_index=True,
                         column_config={
-                            "Subject_Avg": st.column_config.NumberColumn("Avg /10", format="%.2f"),
-                            "Username": "Roll No"
+                            "Username": "Roll No",
+                            "Student_Name": "Student Name"
                         }
                     )
+
+                    # Show a summary count for the lecturer
+                    total_missed = len(df[df['Status'] == "🔴 MISSED"])
+                    if total_missed > 0:
+                        st.warning(f"🚩 Total negligent instances detected: **{total_missed}**")
                 else:
-                    st.info("No data available to generate master record.")
+                    st.info("No data available to generate the status board.")
         else:
             st.warning("⚠️ Please create semesters first.")
         # ANALYTICS
