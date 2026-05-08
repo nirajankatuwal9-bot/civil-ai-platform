@@ -526,8 +526,8 @@ if role == "lecturer":
                                 max_value=10,
                                 value=int(row['marks']) if row['marks'] and str(row['marks']).strip() else 0,
                                 key=f"manual_{row['id']}"
-                           )
-                           if st.button("💾 Save Manual Marks", key=f"save_{row['id']}"):
+                            )
+                            if st.button("💾 Save Manual Marks", key=f"save_{row['id']}"):
                                c.execute(
                                     "UPDATE submissions SET marks=? WHERE id=?",
                                     (manual_marks, row["id"])
