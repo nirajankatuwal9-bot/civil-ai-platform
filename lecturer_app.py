@@ -360,7 +360,54 @@ def apply_watermark(file_path, watermark_text="🌊 The N-Streamlines | Er. Nira
         os.replace(temp_path, file_path)
     except Exception as e:
         st.error(f"Watermark Engine Error: {e}")    
+# ================= DEADLINE HELPER FUNCTIONS =================
 
+def get_deadline_status(deadline_str):
+    """
+    Calculate days until deadline and return status
+    Returns: (days_remaining, status, color)
+    """
+    from datetime import datetime, timedelta
+    
+    try:
+        # Parse deadline
+        deadline = datetime.strptime(deadline_str, "%Y-%m-%d")
+        today = datetime.now()
+        
+        # Calculate difference
+        days_remaining = (deadline - today).days
+        
+        # Determine status
+        if days_remaining < 0:
+            return days_remaining, "Overdue", "🔴"
+        elif days_remaining == 0:
+            return days_remaining, "Due Today", "🟠"
+        elif days_remaining <= 3:
+            return days_remaining, "Due Soon", "🟡"
+        elif days_remaining <= 7:
+            return days_remaining, "This Week", "🟢"
+        else:
+            return days_remaining, "Upcoming", "🔵"
+    except:
+        return None, "Unknown", "⚪"
+
+
+def format_deadline_display(deadline_str):
+    """
+    Format deadline string for display with countdown
+    """
+    days, status, color = get_deadline_status(deadline_str)
+    
+    if days is None:
+        return "{}  {}".format(color, deadline_str)
+    elif days < 0:
+        return "{}  {} ({} days overdue)".format(color, deadline_str, abs(days))
+    elif days == 0:
+        return "{}  {} (Due Today!)".format(color, deadline_str)
+    elif days == 1:
+        return "{}  {} (Tomorrow)".format(color, deadline_str)
+    else:
+        return "{}  {} ({} days left)".format(color, deadline_str, days)
 # ==========================================================
 # ===================== LECTURER ============================
 # ==========================================================
@@ -368,6 +415,7 @@ def apply_watermark(file_path, watermark_text="🌊 The N-Streamlines | Er. Nira
 if role == "lecturer":
 
     tabs = st.tabs([
+        "Dashboard",  
         "Semesters",
         "Subjects",
         "Assignments",
@@ -376,9 +424,138 @@ if role == "lecturer":
         "Manage Students",
         "Study Materilas"
     ])
-
-    # SEMESTERS
+        # DASHBOARD
     with tabs[0]:
+        
+        st.title("📊 Dashboard")
+        
+        # Get all assignments
+        all_assignments = pd.read_sql_query("""
+        SELECT 
+            assignments.id,
+            assignments.title,
+            assignments.deadline,
+            subjects.name as subject,
+            semesters.name as semester
+        FROM assignments
+        JOIN subjects ON assignments.subject_id = subjects.id
+        JOIN semesters ON subjects.semester_id = semesters.id
+        ORDER BY assignments.deadline ASC
+        """, conn)
+        
+        if all_assignments.empty:
+            st.info("No assignments created yet.")
+        else:
+            st.subheader("⏰ Assignment Deadlines Overview")
+            
+            # Categorize assignments
+            overdue = []
+            due_today = []
+            due_soon = []
+            upcoming = []
+            
+            for _, assignment in all_assignments.iterrows():
+                days, status, color = get_deadline_status(assignment['deadline'])
+                
+                assignment_info = {
+                    'title': assignment['title'],
+                    'subject': assignment['subject'],
+                    'semester': assignment['semester'],
+                    'deadline': assignment['deadline'],
+                    'days': days,
+                    'status': status,
+                    'color': color,
+                    'id': assignment['id']
+                }
+                
+                if status == "Overdue":
+                    overdue.append(assignment_info)
+                elif status == "Due Today":
+                    due_today.append(assignment_info)
+                elif status == "Due Soon" or status == "This Week":
+                    due_soon.append(assignment_info)
+                else:
+                    upcoming.append(assignment_info)
+            
+            # Metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("🔴 Overdue", len(overdue))
+            with col2:
+                st.metric("🟠 Due Today", len(due_today))
+            with col3:
+                st.metric("🟡 Due This Week", len(due_soon))
+            with col4:
+                st.metric("🔵 Upcoming", len(upcoming))
+            
+            st.divider()
+            
+            # Show details
+            if overdue:
+                st.error("🔴 **OVERDUE ASSIGNMENTS**")
+                for assign in overdue:
+                    with st.expander("{} - {} ({})".format(assign['semester'], assign['subject'], assign['title'])):
+                        st.write("**Deadline:** {}".format(assign['deadline']))
+                        st.write("**Overdue by:** {} days".format(abs(assign['days'])))
+                        
+                        # Show submission stats
+                        submissions = pd.read_sql_query("""
+                        SELECT COUNT(*) as count FROM submissions
+                        WHERE assignment_id=?
+                        """, conn, params=(assign['id'],))
+                        
+                        st.metric("Submissions Received", submissions.iloc[0]['count'])
+            
+            if due_today:
+                st.warning("🟠 **DUE TODAY**")
+                for assign in due_today:
+                    st.info("{} - {} - {}".format(assign['semester'], assign['subject'], assign['title']))
+            
+            if due_soon:
+                st.info("🟡 **DUE THIS WEEK**")
+                for assign in due_soon:
+                    st.write("📌 {} - {} - {} ({} days left)".format(
+                        assign['semester'],
+                        assign['subject'],
+                        assign['title'],
+                        assign['days']
+                    ))
+            
+            st.divider()
+            
+            # Submission statistics
+            st.subheader("📈 Submission Statistics")
+            
+            for _, assignment in all_assignments.iterrows():
+                # Count submissions
+                total_submissions = pd.read_sql_query("""
+                SELECT COUNT(*) as count FROM submissions
+                WHERE assignment_id=?
+                """, conn, params=(assignment['id'],)).iloc[0]['count']
+                
+                # Count total students in semester
+                semester_id = pd.read_sql_query("""
+                SELECT semester_id FROM subjects WHERE id=?
+                """, conn, params=(assignment['subject'],))
+                
+                deadline_display = format_deadline_display(assignment['deadline'])
+                
+                with st.expander("{} - {} | {}".format(assignment['subject'], assignment['title'], deadline_display)):
+                    col_a, col_b = st.columns(2)
+                    
+                    with col_a:
+                        st.metric("Total Submissions", total_submissions)
+                    
+                    with col_b:
+                        graded = pd.read_sql_query("""
+                        SELECT COUNT(*) as count FROM submissions
+                        WHERE assignment_id=? AND marks IS NOT NULL AND marks != ''
+                        """, conn, params=(assignment['id'],)).iloc[0]['count']
+                        
+                        st.metric("Graded", graded)
+    # SEMESTERS
+    with tabs[1]:
         name = st.text_input("New Semester")
 
         if st.button("Add Semester"):
@@ -432,7 +609,7 @@ if role == "lecturer":
                 st.rerun()
 
     # SUBJECTS
-    with tabs[1]:
+    with tabs[2]:
         
         sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
 
@@ -483,7 +660,7 @@ if role == "lecturer":
             st.dataframe(all_subjects_debug, use_container_width=True, hide_index=True)
 
     # ASSIGNMENTS
-    with tabs[2]:
+    with tabs[3]:
         st.subheader("create New Assignment")
 
         sems = pd.read_sql_query("SELECT * FROM semesters ORDER by name ASC", conn)
@@ -562,7 +739,7 @@ if role == "lecturer":
             st.dataframe(all_assignments, use_container_width=True, hide_index=True)
 
     # SUBMISSIONS & AI
-    with tabs[3]:
+    with tabs[4]:
 
         st.subheader("Student Submissions & AI Grading")
 
@@ -735,7 +912,7 @@ if role == "lecturer":
                             st.write(row['ai_summary'])
 
     # ANALYTICS
-    with tabs[4]:
+    with tabs[5]:
         
         st.subheader("Performance Analytics")
         
@@ -786,7 +963,7 @@ if role == "lecturer":
                 st.info("No graded submissions yet for this semester.")
 
     # MANAGE STUDENTS
-    with tabs[5]:
+    with tabs[6]:
         
         # TEMPORARY FIX BUTTON - Remove after fixing all students
         st.subheader("⚠️ Emergency Fix for Existing Students")
@@ -1097,7 +1274,7 @@ if role == "lecturer":
             st.info("No students to update.")
             
     # STUDY MATERIALS
-    with tabs[6]:
+    with tabs[7]:
         
         st.title("📚 Study Materials Management")
         
@@ -1312,8 +1489,10 @@ elif role == "student":
 
     tabs = st.tabs(["Assignments","Study Materials", "My Results"])
 
-    # ================= ASSIGNMENTS =================
+        # ================= ASSIGNMENTS =================
     with tabs[0]:
+
+        st.title("📝 My Assignments")
 
         # Get student's semester
         student_info = pd.read_sql_query(
@@ -1327,10 +1506,6 @@ elif role == "student":
             st.stop()
 
         sem_id_raw = student_info.iloc[0]["semester_id"]
-
-        # Debug - Remove after fixing 
-        st.write("DEBUG: Your user_id = {}".format(st.session_state.user_id))
-        st.write("DEBUG: Your semester_id = {} (type: {})".format(sem_id_raw, type(sem_id_raw)))
 
         if sem_id_raw is None or str(sem_id_raw).strip() == "":
             st.warning("You are not assigned to a semester. Please Contact your Lecturer")
@@ -1346,8 +1521,107 @@ elif role == "student":
         )
         
         if not semester_info.empty:
-            st.info("You are enrolled in: **{}**".format(semester_info.iloc[0]['name']))
+            st.info("📚 Semester: **{}**".format(semester_info.iloc[0]['name']))
+        
+        # ========== DEADLINE REMINDER DASHBOARD ==========
+        st.subheader("⏰ Deadline Reminders")
+        
+        # Get all assignments for student's semester
+        all_assignments = pd.read_sql_query("""
+        SELECT 
+            assignments.id,
+            assignments.title,
+            assignments.deadline,
+            subjects.name as subject
+        FROM assignments
+        JOIN subjects ON assignments.subject_id = subjects.id
+        WHERE subjects.semester_id=?
+        ORDER BY assignments.deadline ASC
+        """, conn, params=(sem_id,))
+        
+        if not all_assignments.empty:
+            # Check submission status
+            overdue = []
+            due_today = []
+            due_soon = []
+            upcoming = []
+            completed = []
             
+            for _, assignment in all_assignments.iterrows():
+                # Check if submitted
+                submission = pd.read_sql_query("""
+                SELECT id FROM submissions
+                WHERE assignment_id=? AND student_id=?
+                """, conn, params=(int(assignment['id']), int(st.session_state.user_id)))
+                
+                days, status, color = get_deadline_status(assignment['deadline'])
+                
+                assignment_info = {
+                    'id': assignment['id'],
+                    'title': assignment['title'],
+                    'subject': assignment['subject'],
+                    'deadline': assignment['deadline'],
+                    'days': days,
+                    'status': status,
+                    'color': color
+                }
+                
+                if not submission.empty:
+                    completed.append(assignment_info)
+                elif status == "Overdue":
+                    overdue.append(assignment_info)
+                elif status == "Due Today":
+                    due_today.append(assignment_info)
+                elif status == "Due Soon":
+                    due_soon.append(assignment_info)
+                else:
+                    upcoming.append(assignment_info)
+            
+            # Display metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("🔴 Overdue", len(overdue))
+            with col2:
+                st.metric("🟠 Due Today", len(due_today))
+            with col3:
+                st.metric("🟡 Due Soon", len(due_soon))
+            with col4:
+                st.metric("✅ Completed", len(completed))
+            
+            st.divider()
+            
+            # Show overdue assignments (if any)
+            if overdue:
+                st.error("🔴 **OVERDUE ASSIGNMENTS - Submit Immediately!**")
+                for assign in overdue:
+                    st.warning("⚠️ **{}** - {} (Overdue by {} days)".format(
+                        assign['subject'],
+                        assign['title'],
+                        abs(assign['days'])
+                    ))
+            
+            # Show due today (if any)
+            if due_today:
+                st.warning("🟠 **DUE TODAY - Last Chance!**")
+                for assign in due_today:
+                    st.info("⏰ **{}** - {}".format(assign['subject'], assign['title']))
+            
+            # Show due soon (if any)
+            if due_soon:
+                st.info("🟡 **DUE SOON - Complete These First!**")
+                for assign in due_soon:
+                    st.write("📌 **{}** - {} ({} days left)".format(
+                        assign['subject'],
+                        assign['title'],
+                        assign['days']
+                    ))
+            
+            st.divider()
+        
+        # ========== ASSIGNMENT LIST WITH STATUS ==========
+        st.subheader("📋 All Assignments")
+        
         # Get assignments for student's semester
         assignments = pd.read_sql_query("""
         SELECT assignments.*, subjects.name as subject
@@ -1357,23 +1631,41 @@ elif role == "student":
         ORDER BY assignments.deadline ASC
         """, conn, params=(sem_id,))
 
-        # Debug - remove after fixing
-        st.write("DEBUG: Found {} assignments for semester {}".format(len(assignments), sem_id))
-
         if assignments.empty:
-            st.info("No assignments available for your semester.")
+            st.info("📭 No assignments available for your semester.")
         else:
             for index, row in assignments.iterrows():
-                # Safe string creation to avoid any SyntaxErrors
-                expander_title = str(row['subject']) + " - " + str(row['title']) + " (Due: " + str(row['deadline']) + ")"
-
+                
+                # Check submission status
+                existing_submission = pd.read_sql_query("""
+                SELECT * FROM submissions
+                WHERE assignment_id=? AND student_id=?
+                """, conn, params=(int(row["id"]), int(st.session_state.user_id)))
+                
+                # Get deadline status
+                deadline_display = format_deadline_display(row['deadline'])
+                
+                # Create expander title with status
+                if not existing_submission.empty:
+                    expander_title = "✅ {} - {} | {}".format(
+                        row['subject'],
+                        row['title'],
+                        deadline_display
+                    )
+                else:
+                    expander_title = "{} - {} | {}".format(
+                        row['subject'],
+                        row['title'],
+                        deadline_display
+                    )
+                
                 with st.expander(expander_title):
 
                     # DOWNLOAD ASSIGNMENT FILE
                     if row["question_file"] and os.path.exists(row["question_file"]):
                         with open(row["question_file"], "rb") as f:
                             st.download_button(
-                                "Download Assignment",
+                                "📥 Download Assignment Question",
                                 f,
                                 file_name=os.path.basename(row["question_file"]),
                                 key="download_q_{}".format(row['id'])
@@ -1384,13 +1676,8 @@ elif role == "student":
                     st.divider()
 
                     # CHECK IF ALREADY SUBMITTED
-                    existing_submission = pd.read_sql_query("""
-                    SELECT * FROM submissions
-                    WHERE assignment_id=? AND student_id=?
-                    """, conn, params=(int(row["id"]), int(st.session_state.user_id)))
-
                     if not existing_submission.empty:
-                        st.success("You have already submitted this assignment.")
+                        st.success("✅ You have already submitted this assignment.")
 
                         submission_time = existing_submission.iloc[0]["submission_time"]
                         st.write("**Submitted on:** {}".format(submission_time))
@@ -1398,33 +1685,43 @@ elif role == "student":
                         # Show marks if graded
                         marks = existing_submission.iloc[0]["marks"]
                         if marks and str(marks).strip():
-                            st.metric("Marks Awarded", str(marks) + "/10")
+                            st.metric("🎯 Marks Awarded", str(marks) + "/10")
                         else:
-                            st.info("Not graded yet")
+                            st.info("⏳ Not graded yet")
 
                         # Allow download of submitted file
                         submitted_file = existing_submission.iloc[0]["submission_file"]
                         if submitted_file and os.path.exists(submitted_file):
                             with open(submitted_file, "rb") as f:
                                 st.download_button(
-                                    "Download My Submission",
+                                    "📥 Download My Submission",
                                     f,
                                     file_name=os.path.basename(submitted_file),
                                     key="download_sub_{}".format(row['id'])
                                 )
 
                     else:
+                        # Show deadline warning
+                        days, status, color = get_deadline_status(row['deadline'])
+                        
+                        if status == "Overdue":
+                            st.error("🔴 **This assignment is OVERDUE by {} days!**".format(abs(days)))
+                        elif status == "Due Today":
+                            st.warning("🟠 **This assignment is DUE TODAY!**")
+                        elif status == "Due Soon":
+                            st.info("🟡 **Only {} days left to submit!**".format(days))
+                        
                         # UPLOAD NEW SUBMISSION
                         uploaded = st.file_uploader(
-                            "Upload Your PDF",
+                            "📤 Upload Your Answer PDF",
                             type=["pdf"],
                             key="upload_{}".format(row['id'])
                         )
 
-                        if st.button("Submit Assignment", key="submit_{}".format(row['id'])):
+                        if st.button("Submit Assignment", key="submit_{}".format(row['id']), type="primary"):
 
                             if not uploaded:
-                                st.warning("Please upload a PDF file before submitting.")
+                                st.warning("⚠️ Please upload a PDF file before submitting.")
                             else:
                                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                                 file_path = "submission_files/" + str(st.session_state.username) + "_" + str(row['id']) + "_" + timestamp + ".pdf"
@@ -1452,7 +1749,13 @@ elif role == "student":
                                 ))
 
                                 conn.commit()
-                                st.success("Assignment submitted successfully.")
+                                
+                                # Check if submitted on time
+                                if days >= 0:
+                                    st.success("✅ Assignment submitted successfully on time!")
+                                else:
+                                    st.warning("⚠️ Assignment submitted {} days late.".format(abs(days)))
+                                
                                 st.balloons()
                                 st.rerun()
 
