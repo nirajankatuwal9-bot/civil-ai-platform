@@ -15,13 +15,12 @@ import google.generativeai as genai
 # ================= CONFIG =================
 
 st.set_page_config(
-    page_title="Civil Engineering AI Platform",
+    page_title="water flows by Nirajan Katuwal",
     page_icon="🏗️",
     layout="wide"
 )
 
-#GEMINI_MODEL = "gemini-1.5-flash"
-#client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
 
 # ================= FOLDERS =================
 
