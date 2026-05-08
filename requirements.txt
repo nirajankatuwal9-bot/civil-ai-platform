@@ -4,3 +4,4 @@ google-genai
 pdf2image
 bcrypt
 plotly
+google-generativeai
