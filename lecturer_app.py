@@ -442,47 +442,47 @@ if role == "lecturer":
     # MANAGE STUDENTS
     with tabs[5]:
 
-    st.subheader("Add Student Manually")
+        st.subheader("Add Student Manually")
 
-    col1, col2 = st.columns(2)
+        col1, col2 = st.columns(2)
 
-    with col1:
-        student_name = st.text_input("Full Name", key="student_name")
-        username = st.text_input("Username", key="student_username")
-        password = st.text_input("Password", type="password", key="student_password")
+        with col1:
+            student_name = st.text_input("Full Name", key="student_name")
+            username = st.text_input("Username", key="student_username")
+            password = st.text_input("Password", type="password", key="student_password")
 
-    with col2:
-        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        with col2:
+            sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
 
-        if sems.empty:
-            st.warning("Please create semesters first.")
-        else:
-            semester_name = st.selectbox("Assign Semester", sems["name"], key="student_semester")
-            semester_id = int(sems[sems["name"] == semester_name]["id"].values[0])  # ← Convert to int
+            if sems.empty:
+                st.warning("Please create semesters first.")
+            else:
+                semester_name = st.selectbox("Assign Semester", sems["name"], key="student_semester")
+                semester_id = int(sems[sems["name"] == semester_name]["id"].values[0])  # ← Convert to int
 
-            if st.button("Create Student"):
+                if st.button("Create Student"):
 
-                if not username or not password:
-                    st.error("Username and password required.")
-                else:
-                    try:
-                        c.execute("""
-                        INSERT INTO users(full_name, username, password, role, semester_id)
-                        VALUES(?,?,?,?,?)
-                        """, (
-                            student_name.strip(),
-                            username.strip(),
-                            hash_password(password.strip()),
-                            "student",
-                            int(semester_id)  # ← Ensure it's int
-                        ))
-                        conn.commit()
-                        st.success(f"✅ Student '{username}' created and assigned to '{semester_name}'")
-                        st.rerun()
-                    except sqlite3.IntegrityError:
-                        st.error("Username already exists.")
-                    except Exception as e:
-                        st.error(f"Error creating student: {e}")
+                    if not username or not password:
+                        st.error("Username and password required.")
+                    else:
+                        try:
+                            c.execute("""
+                            INSERT INTO users(full_name, username, password, role, semester_id)
+                            VALUES(?,?,?,?,?)
+                            """, (
+                                student_name.strip(),
+                                username.strip(),
+                                hash_password(password.strip()),
+                                "student",
+                                int(semester_id)  # ← Ensure it's int
+                            ))
+                            conn.commit()
+                            st.success(f"✅ Student '{username}' created and assigned to '{semester_name}'")
+                            st.rerun()
+                        except sqlite3.IntegrityError:
+                            st.error("Username already exists.")
+                        except Exception as e:
+                            st.error(f"Error creating student: {e}")
 
     st.divider()
 
