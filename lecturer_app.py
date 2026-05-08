@@ -457,7 +457,7 @@ if role == "lecturer":
             st.dataframe(
             df[["semester", "subject", "assignment", "username", "full_name", "submission_time", "marks"]],
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
 
                 st.divider()
                 st.subheader("🤖 AI Grading Tool")
