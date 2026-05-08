@@ -440,7 +440,7 @@ if role == "lecturer":
             st.info("No graded submissions yet.")
 
     # MANAGE STUDENTS
-with tabs[5]:
+    with tabs[5]:
 
     st.subheader("Add Student Manually")
 
