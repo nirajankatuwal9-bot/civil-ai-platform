@@ -206,7 +206,7 @@ def check_session_timeout():
 
 def require_login():
     """
-    Decorator-style function to check login and session
+    Check login and session validity
     """
     if not st.session_state.get("logged_in", False):
         st.error("🔒 Please login to access this page")
@@ -609,7 +609,7 @@ def check_deadline_passed(deadline_str):
     except:
         return False, "Invalid deadline format"
 
-# ================= DATABASE BACKUP SYSTEM =================
+# ================= DATABASE BACKUP SYSTEM (SAFE VERSION) =================
 
 def create_database_backup():
     """
@@ -625,18 +625,16 @@ def create_database_backup():
         
         # Generate backup filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = "{}/lecturer_backup_{}.db".format(backup_dir, timestamp)
-        
-        # Close current connection temporarily
-        conn.close()
+        backup_filename = "lecturer_backup_{}.db".format(timestamp)
+        backup_path = os.path.join(backup_dir, backup_filename)
         
         # Copy database file
+        # SQLite allows copying while database is in use
         shutil.copy2(DB_PATH, backup_path)
         
-        # Reconnect
-        global conn, c
-        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-        c = conn.cursor()
+        # Verify backup was created
+        if not os.path.exists(backup_path):
+            return False, "Backup file was not created"
         
         # Get backup file size
         backup_size = os.path.getsize(backup_path) / 1024  # KB
@@ -644,12 +642,11 @@ def create_database_backup():
         # Clean old backups (keep only last 10)
         cleanup_old_backups(backup_dir, keep_count=10)
         
-        return True, "Backup created: {} ({:.2f} KB)".format(backup_path, backup_size)
+        return True, "Backup created: {} ({:.2f} KB)".format(backup_filename, backup_size)
     
+    except PermissionError:
+        return False, "Permission denied. Database may be locked."
     except Exception as e:
-        # Reconnect if failed
-        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-        c = conn.cursor()
         return False, "Backup failed: {}".format(str(e))
 
 
@@ -658,61 +655,114 @@ def cleanup_old_backups(backup_dir, keep_count=10):
     Keep only the most recent N backups
     """
     try:
+        if not os.path.exists(backup_dir):
+            return
+        
         backups = []
         for filename in os.listdir(backup_dir):
             if filename.startswith("lecturer_backup_") and filename.endswith(".db"):
                 file_path = os.path.join(backup_dir, filename)
-                backups.append((file_path, os.path.getmtime(file_path)))
+                try:
+                    mod_time = os.path.getmtime(file_path)
+                    backups.append((file_path, mod_time))
+                except:
+                    continue
         
         # Sort by modification time (newest first)
         backups.sort(key=lambda x: x[1], reverse=True)
         
         # Delete old backups
         for file_path, _ in backups[keep_count:]:
-            os.remove(file_path)
+            try:
+                os.remove(file_path)
+            except:
+                pass
     
-    except Exception as e:
-        st.warning("Could not cleanup old backups: {}".format(str(e)))
+    except:
+        pass  # Silently fail
 
 
 def restore_database_from_backup(backup_path):
     """
     Restore database from a backup file
+    
+    ⚠️ WARNING: This will replace the current database!
+    The app needs to be restarted after restore.
+    
     Returns: (success, message)
     """
     try:
         import shutil
         
         if not os.path.exists(backup_path):
-            return False, "Backup file not found"
+            return False, "Backup file not found: {}".format(backup_path)
         
-        # Close current connection
-        conn.close()
+        # Verify backup file is valid
+        backup_size = os.path.getsize(backup_path)
+        if backup_size < 1000:  # Less than 1KB is suspicious
+            return False, "Backup file appears to be corrupted (too small)"
         
-        # Backup current database before restoring
-        emergency_backup = DB_PATH + ".emergency"
-        shutil.copy2(DB_PATH, emergency_backup)
+        # Create emergency backup of current database
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        emergency_backup = "{}.before_restore_{}".format(DB_PATH, timestamp)
         
-        # Restore from backup
-        shutil.copy2(backup_path, DB_PATH)
+        try:
+            shutil.copy2(DB_PATH, emergency_backup)
+        except:
+            return False, "Could not create emergency backup of current database"
         
-        # Reconnect
-        global conn, c
-        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-        c = conn.cursor()
+        # Perform restore
+        try:
+            shutil.copy2(backup_path, DB_PATH)
+        except PermissionError:
+            return False, "Permission denied. Close all database connections first."
+        except Exception as e:
+            # Try to restore emergency backup
+            try:
+                shutil.copy2(emergency_backup, DB_PATH)
+            except:
+                pass
+            return False, "Restore failed: {}".format(str(e))
         
-        return True, "Database restored successfully from {}".format(backup_path)
+        return True, "✅ Database restored from backup. IMPORTANT: Please RESTART the app (refresh page) to reconnect to the restored database."
     
     except Exception as e:
-        # Try to restore emergency backup
-        try:
-            shutil.copy2(emergency_backup, DB_PATH)
-            conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-            c = conn.cursor()
-        except:
-            pass
-        
-        return False, "Restore failed: {}".format(str(e))
+        return False, "Restore error: {}".format(str(e))
+
+
+def get_backup_list():
+    """
+    Get list of available backups with metadata
+    Returns: list of dicts with backup info
+    """
+    backup_dir = "data/backups"
+    backups = []
+    
+    if not os.path.exists(backup_dir):
+        return backups
+    
+    for filename in os.listdir(backup_dir):
+        if filename.startswith("lecturer_backup_") and filename.endswith(".db"):
+            file_path = os.path.join(backup_dir, filename)
+            
+            try:
+                size_kb = os.path.getsize(file_path) / 1024
+                mod_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+                
+                backups.append({
+                    'filename': filename,
+                    'path': file_path,
+                    'size_kb': round(size_kb, 2),
+                    'date': mod_time.strftime("%Y-%m-%d %H:%M:%S")
+                })
+            except:
+                continue
+    
+    # Sort by date (newest first)
+    backups.sort(key=lambda x: x['date'], reverse=True)
+    
+    return backups
+
 # ================= CONFIRMATION DIALOGS =================
 
 def confirm_delete(item_name, item_type="item"):
@@ -2469,54 +2519,90 @@ if role == "lecturer":
         with col_stat4:
             submission_count = pd.read_sql_query("SELECT COUNT(*) as count FROM submissions", conn).iloc[0]['count']
             st.metric("📤 Submissions", submission_count)
-        st.divider()
+            st.divider()
         
         # ========== DATABASE BACKUP & RESTORE ==========
         st.subheader("💾 Database Backup & Restore")
         
+        st.warning("⚠️ **Important:** After restoring a backup, you must refresh the page to reconnect to the database.")
+        
         col_backup1, col_backup2 = st.columns(2)
         
         with col_backup1:
-            st.write("**Create Backup**")
-            if st.button("📦 Backup Database Now", use_container_width=True, type="primary"):
+            st.markdown("**📦 Create New Backup**")
+            st.info("Creates a timestamped backup of the current database. Last 10 backups are kept automatically.")
+            
+            if st.button("📦 Create Backup Now", use_container_width=True, type="primary"):
                 with st.spinner("Creating backup..."):
                     success, message = create_database_backup()
                 
                 if success:
                     st.success("✅ {}".format(message))
+                    st.balloons()
                 else:
                     st.error("❌ {}".format(message))
         
         with col_backup2:
-            st.write("**Restore from Backup**")
+            st.markdown("**🔄 Restore from Backup**")
             
-            backup_dir = "data/backups"
-            if os.path.exists(backup_dir):
-                backups = [f for f in os.listdir(backup_dir) if f.endswith('.db')]
-                backups.sort(reverse=True)
+            backups = get_backup_list()
+            
+            if backups:
+                # Display backups in a nice format
+                backup_options = {
+                    "{} ({} KB)".format(b['date'], b['size_kb']): b['path']
+                    for b in backups
+                }
                 
-                if backups:
-                    selected_backup = st.selectbox(
-                        "Select backup file",
-                        backups,
-                        key="restore_backup_select"
-                    )
+                selected_backup_display = st.selectbox(
+                    "Select backup to restore",
+                    list(backup_options.keys()),
+                    key="restore_backup_select"
+                )
+                
+                if selected_backup_display:
+                    selected_backup_path = backup_options[selected_backup_display]
                     
-                    if st.button("🔄 Restore from Backup", use_container_width=True):
-                        backup_path = os.path.join(backup_dir, selected_backup)
+                    # Two-step confirmation
+                    if st.button("⚠️ Restore Database", use_container_width=True):
+                        st.error("🚨 **DANGER ZONE** 🚨")
+                        st.write("This will replace the current database!")
                         
-                        with st.spinner("Restoring database..."):
-                            success, message = restore_database_from_backup(backup_path)
+                        col_confirm1, col_confirm2 = st.columns(2)
                         
-                        if success:
-                            st.success("✅ {}".format(message))
-                            st.info("⚠️ Please refresh the page to see changes")
-                        else:
-                            st.error("❌ {}".format(message))
-                else:
-                    st.info("No backups available")
+                        with col_confirm1:
+                            if st.button("✅ YES, RESTORE", type="primary", use_container_width=True, key="confirm_restore_yes"):
+                                with st.spinner("Restoring database..."):
+                                    success, message = restore_database_from_backup(selected_backup_path)
+                                
+                                if success:
+                                    st.success("✅ {}".format(message))
+                                    st.info("🔄 Please REFRESH the page now (Ctrl+R or Cmd+R)")
+                                else:
+                                    st.error("❌ {}".format(message))
+                        
+                        with col_confirm2:
+                            if st.button("❌ Cancel", use_container_width=True, key="confirm_restore_no"):
+                                st.info("Restore cancelled")
             else:
-                st.info("No backup directory found")
+                st.info("📭 No backups available yet. Create your first backup!")
+        
+        st.divider()
+        
+        # Show backup history
+        if backups:
+            with st.expander("📜 Backup History"):
+                backup_df = pd.DataFrame(backups)
+                st.dataframe(
+                    backup_df[['filename', 'date', 'size_kb']],
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        'filename': 'Backup File',
+                        'date': 'Created On',
+                        'size_kb': 'Size (KB)'
+                    }
+                )
 # ==========================================================
 # ===================== STUDENT =============================
 # ==========================================================
