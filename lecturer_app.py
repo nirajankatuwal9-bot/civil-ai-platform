@@ -239,7 +239,7 @@ def extract_marks(text):
     for pattern in patterns:
         m = re.search(pattern, text, re.IGNORECASE)
         
-        if match:
+        if m:
             try:
                 marks = int(m.group(1))
                 #Ensure marks are within valid range
