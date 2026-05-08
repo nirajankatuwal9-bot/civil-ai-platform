@@ -1268,12 +1268,52 @@ if role == "lecturer":
                 st.dataframe(subject_stats, use_container_width=True)
 
                 st.divider()
-                st.subheader("📋 Detailed Grade Table (Master View)")
-                # Formatting table for visual clarity
-                st.dataframe(df[['Student_Name', 'Subject', 'Assignment', 'Status', 'Marks']], use_container_width=True, hide_index=True)
+                # --- STEP 3: CREATE HORIZONTAL (PIVOT) VIEW ---
+                st.divider()
+                st.subheader("📋 Master Academic Record (Clean View)")
                 
-            else:
-                st.info("📭 No data found for this selection.")
+                if not df.empty:
+                    # 1. Prepare numeric data for calculation
+                    calc_df = df.copy()
+                    calc_df['num_marks'] = pd.to_numeric(calc_df['Marks'], errors='coerce').fillna(0)
+
+                    # 2. Pivot the main table (Rows: Student/Subject, Cols: Assignments)
+                    # This puts multiple assignments of the same subject on one line
+                    pivot_table = df.pivot_table(
+                        index=['Student_Name', 'Username', 'Subject'],
+                        columns='Assignment',
+                        values='Marks',
+                        aggfunc='first'
+                    ).reset_index()
+
+                    # 3. Calculate Average per Student per Subject
+                    avg_stats = calc_df.groupby(['Student_Name', 'Username', 'Subject'])['num_marks'].mean().round(2).reset_index()
+                    avg_stats.rename(columns={'num_marks': 'Subject_Avg'}, inplace=True)
+
+                    # 4. Merge Average back to the Pivot Table
+                    final_view = pd.merge(pivot_table, avg_stats, on=['Student_Name', 'Username', 'Subject'])
+
+                    # 5. Add a logic-based Status Label
+                    def get_overall_status(avg):
+                        if avg >= 4: return "🟢 Good Standing"
+                        if avg > 0: return "🟡 At Risk"
+                        return "🔴 Negligent (0 Submissions)"
+                    
+                    final_view['Performance_Status'] = final_view['Subject_Avg'].apply(get_overall_status)
+
+                    # --- DISPLAY ---
+                    st.info("💡 Tip: Horizontal view groups all assignments of the same subject into a single row per student.")
+                    st.dataframe(
+                        final_view, 
+                        use_container_width=True, 
+                        hide_index=True,
+                        column_config={
+                            "Subject_Avg": st.column_config.NumberColumn("Avg /10", format="%.2f"),
+                            "Username": "Roll No"
+                        }
+                    )
+                else:
+                    st.info("No data available to generate master record.")
         else:
             st.warning("⚠️ Please create semesters first.")
         # ANALYTICS
