@@ -214,6 +214,15 @@ FEEDBACK:
         return "Error during grading:{}".format(str(e))
 
 def extract_marks(text):
+    """
+    Extract marks from AI response text.
+    Returns aninteger between 1-10, or None if not found.
+    """
+    if not text:
+        return None
+    #convert to string in case it's not
+    text = str(text)
+    
     #Try multiple patterns to extract marks 
     patterns = [
         r"FINAL_MARKS:\s*(|d+)/10",
@@ -224,11 +233,16 @@ def extract_marks(text):
     ]
 
     for pattern in patterns:
-        m = re.search(r"FINAL_MARKS:\s*(\d+)/10", text)
+        m = re.search(patter, text, re.IGNORECASE)
+        
         if m:
-            marks = int(m.group(1))
-            #Ensure marks are within valid range
-            return min(max(marks,0),10)
+            try:
+                marks = int(m.group(1))
+                #Ensure marks are within valid range
+                if 0 <= marks <=10:
+                    return marks
+            except (ValueError, IndexError):
+                continue
     return none
     
 
@@ -543,7 +557,9 @@ if role == "lecturer":
                                             st.write("**AI Response:**")
                                             st.write(result)
 
-                                            marks = extract_marks(result)
+                                            #check if result contains error
+                                            if result and "Error" not is str(result):
+                                                marks = extract_marks(result)
                                             if marks is not None:
                                                 c.execute(
                                                     "UPDATE submissions SET marks=?, ai_summary=? WHERE id=?",
@@ -553,9 +569,20 @@ if role == "lecturer":
                                                 st.success("Updated marks: {}/10".format(marks))
                                                 st.rerun()
                                             else:
-                                                st.warning("Could not extract marks from AI response")
-                                        except Exception as e:
+                                                st.warning("Could not extract marks from AI response.Please enter manually below")
+                                                st.info("Tip: Make sure AI response contains 'FINAL_MARKS: X/10'")
+                                                #still save the AI summary even if marks extraction failed
+                                                c. execute(
+                                                    "UPDATE submissions SER ai_summary=? WHERE id=?",
+                                                    (str(result), int(row["id"]))
+                                                )
+                                                conn.commit()
+                                        else:
+                                            st.error("AI returned an error. Check the response above.")
+                                    except Exception as e:
                                             st.error("Error during AI grading: {}".format(str(e)))
+                                            import traceback 
+                                            st.code(traceback.format_exc())
                         
                         with col_b:
                             # Manual grade override
