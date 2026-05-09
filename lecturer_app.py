@@ -347,7 +347,7 @@ if not st.session_state.logged_in:
         """, unsafe_allow_html=True)
     #-------------------------------------------
     with st.container(border=True):
-        user = st.text_input("Username")
+        user = st.text_input("Username").strip()
         pw = st.text_input("Password", type="password")
 
         if st.button("Enter the Flow"):
