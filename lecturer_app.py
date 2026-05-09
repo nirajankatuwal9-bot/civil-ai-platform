@@ -1537,11 +1537,7 @@ if role == "lecturer":
                     st.info("No subjects created yet.")
 
         # ASSIGNMENTS
-    with tabs[3]:  # Adjust index based on your setup
-        
-        st.title("📝 Assignment Management")
-        
-        # ================= ASSIGNMENT MANAGEMENT TAB =================
+    # ================= ASSIGNMENT MANAGEMENT TAB =================
 with tabs[3]:
     st.title("📝 Assignment Management")
     
@@ -1642,6 +1638,8 @@ with tabs[3]:
 
     st.divider()
     # (Rest of your View/Edit Assignment code follows here...)
+        
+      
         
         # ========== VIEW ASSIGNMENTS ==========
         st.subheader("📋 Existing Assignments")
