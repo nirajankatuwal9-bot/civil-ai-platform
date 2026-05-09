@@ -110,6 +110,12 @@ st.markdown("""
         <strong>🌊 The N-Streamlines</strong> | Advanced Hydro-Informatics Platform | © 2026 Developed by Er. Nirajan Katuwal
     </div>
 """, unsafe_allow_html=True)
+<style>
+    /* Hides the 'Made with Streamlit' and GitHub Deploy icons */
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    .stDeployButton {display:none;}
+</style>
 
 
 # ================= FOLDERS =================
