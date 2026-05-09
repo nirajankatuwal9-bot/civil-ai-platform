@@ -427,17 +427,16 @@ def vision_grade(pdf_path, rubric):
         import google.generativeai as genai
         from PIL import Image
         
-        #CONFIGURE WITH api KEY
+        # CONFIGURE WITH api KEY
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-        #CONVERT pdf TO IMAGES
+        # CONVERT pdf TO IMAGES
         images = convert_from_path(pdf_path)
 
-        #Use Gemini Flash Model
-        model=genai.GenerativeModel('gemini-3-flash-preview')
+        # Use Gemini Flash Model
+        model = genai.GenerativeModel('gemini-3-flash-preview')
 
-        #prepare the text prompt
-        # Smarter Prompt Engineering
+        # Prepare the text prompt using only f-string for consistency
         prompt = f"""
 You are a strict Civil Engineering Professor. Grade this student's handwritten work based ONLY on the provided model answer.
 
@@ -465,16 +464,17 @@ FEEDBACK:
 - [Point 1: What they did well]
 - [Point 2: Specific error in calculation or unit]
 - [Point 3: Guidance for improvement]
-"""
-Now grade the assignment shown the images below:""".format(rubric)
 
-        #Prepare content-text first, then PIL images directly
+Now grade the assignment shown in the images below:"""
+
+        # Prepare content-parts
         content_parts = [prompt]
 
-        #ADD images (limit to first 5 pages to avoid token limits)
-        for idx,img in enumerate(images[:5]):
+        # ADD images (limit to first 5 pages to avoid token limits)
+        for idx, img in enumerate(images[:5]):
             content_parts.append(img)
-        #Generate Response
+            
+        # Generate Response
         response = model.generate_content(content_parts)
         if response and hasattr(response, 'text'):
             return response.text
@@ -489,16 +489,16 @@ Now grade the assignment shown the images below:""".format(rubric)
 def extract_marks(text):
     """
     Extract marks from AI response text.
-    Returns aninteger between 1-10, or None if not found.
+    Returns an integer between 1-10, or None if not found.
     """
     if not text:
         return None
-    #convert to string in case it's not
+    
     text = str(text)
     
-    #Try multiple patterns to extract marks 
+    # Try multiple patterns to extract marks 
     patterns = [
-        r"FINAL_MARKS:\s*(|d+)/10",
+        r"FINAL_MARKS:\s*(\d+)/10",
         r"FINAL MARKS:\s*(\d+)/10",
         r"Marks:\s*(\d+)/10",
         r"Score:\s*(\d+)/10",
@@ -507,19 +507,20 @@ def extract_marks(text):
 
     for pattern in patterns:
         m = re.search(pattern, text, re.IGNORECASE)
-        
         if m:
             try:
                 marks = int(m.group(1))
-                #Ensure marks are within valid range
-                if 0 <= marks <=10:
+                # Ensure marks are within valid range
+                if 0 <= marks <= 10:
                     return marks
             except (ValueError, IndexError):
                 continue
-    return none
+    return None # Fixed lowercase 'none' typo
+
 def apply_watermark(file_path, watermark_text="🌊 The N-Streamlines | Er. Nirajan Katuwal | Do Not Distribute"):
     """Stamps a watermark on every page of a PDF."""
     try:
+        import fitz
         doc = fitz.open(file_path)
         for page in doc:
             page_rect = page.rect
@@ -539,7 +540,8 @@ def apply_watermark(file_path, watermark_text="🌊 The N-Streamlines | Er. Nira
         doc.close()
         os.replace(temp_path, file_path)
     except Exception as e:
-        st.error(f"Watermark Engine Error: {e}")    
+        import streamlit as st
+        st.error(f"Watermark Engine Error: {e}")   
 # ================= DEADLINE HELPER FUNCTIONS =================
 
 def get_deadline_status(deadline_str):
