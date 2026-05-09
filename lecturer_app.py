@@ -436,20 +436,35 @@ def vision_grade(pdf_path, rubric):
         model=genai.GenerativeModel('gemini-3-flash-preview')
 
         #prepare the text prompt
-        prompt = """
-You are a strict civil engineering professor.
+        # Smarter Prompt Engineering
+        prompt = f"""
+You are a strict Civil Engineering Professor. Grade this student's handwritten work based ONLY on the provided model answer.
 
-MODEL ANSWER/Rubric:
-{}
+### ASSIGNMENT RUBRIC / MODEL ANSWER:
+{rubric}
 
-#please grade the submitted assignment shown in the images.
+### GRADING INSTRUCTIONS:
+1.  **Extract Equations:** Identify the primary governing equations used by the student (e.g., Manning's, Bernoulli's).
+2.  **Multidimensional Scoring:** 
+    - **Conceptual (4/4):** Did they choose the right approach?
+    - **Math Accuracy (4/4):** Are the step-by-step calculations correct?
+    - **Units & Presentation (2/2):** Are the final units (m, m³/s, etc.) present and correct?
 
-Grade the assignment and Return your response in EXACTLY this format:
+### RESPONSE FORMAT (STRICT):
 FINAL_MARKS: X/10
+SCORECARD:
+- Concepts: X/4
+- Math: X/4
+- Units: X/2
+
+DETECTED_EQUATIONS:
+[List extracted LaTeX equations here]
+
 FEEDBACK:
-- Point 1
-- Point 2
-- Point #
+- [Point 1: What they did well]
+- [Point 2: Specific error in calculation or unit]
+- [Point 3: Guidance for improvement]
+"""
 Now grade the assignment shown the images below:""".format(rubric)
 
         #Prepare content-text first, then PIL images directly
