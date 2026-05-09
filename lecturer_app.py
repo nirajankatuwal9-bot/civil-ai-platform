@@ -828,7 +828,7 @@ def restore_database_from_backup(backup_path):
     """
     Restore database from a backup file
     
-    ⚠️ WARNING: This will replace the current database!
+    WARNING: This will replace the current database!
     The app needs to be restarted after restore.
     
     Returns: (success, message)
