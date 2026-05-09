@@ -2111,6 +2111,16 @@ if role == "lecturer":
                 st.dataframe(subject_stats, use_container_width=True)
 
                 st.divider()
+                with st.expander("🔍 AI 'Common Error' Insight"):
+                   target_assign = st.selectbox("Select Assignment to Analyze Trends", df["Assignment"].unique()) 
+                    if st.button("Analyze Class Trends"):
+                        # Collect all feedback for this assignment
+                        all_feedback = " ".join(df[df["Assignment"] == target_assign]["AI_Feedback"].astype(str))
+                        with st.spinner("Analyzing common pitfalls..."):
+                            trend_model = genai.GenerativeModel('gemini-1.5-flash')
+                            trend_prompt = f"Summarize the top 3 most common technical errors in these civil engineering grading feedbacks: {all_feedback}"
+                            trend_res = trend_model.generate_content(trend_prompt)
+                            st.info(trend_res.text)
                 # --- STEP 3: CREATE HORIZONTAL STATUS BOARD ---
                 st.divider()
                 st.subheader("📋 Master Submission & Grade Board")
