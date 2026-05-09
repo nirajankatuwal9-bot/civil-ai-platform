@@ -203,14 +203,15 @@ CREATE TABLE IF NOT EXISTS subjects(
 )
 """)
 
-# ASSIGNMENTS
+# ASSIGNMENTS - Updated with Rubric column
 c.execute("""
 CREATE TABLE IF NOT EXISTS assignments(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT,
     subject_id INTEGER,
     deadline TEXT,
-    question_file TEXT
+    question_file TEXT,
+    rubric TEXT  -- NEW: Stores the model answer/grading key
 )
 """)
 
@@ -1556,12 +1557,26 @@ if role == "lecturer":
                     subject_selected = True
             
             with col2:
-                title = st.text_input("Assignment Title", placeholder="e.g., Design of RCC Beam")
+                title = st.text_input("Assignment Title", placeholder="e.g., Design of Ogee Weir")
                 deadline = st.date_input("Deadline")
-            
+                
+                # NEW: Rubric / Model Answer Input
+                rubric = st.text_area(
+                    "🎯 Marking Rubric / Model Answer", 
+                    placeholder="Enter key steps, final values, or formulas you want the AI to check...",
+                    help="The AI will use this specific key to grade submissions for this assignment."
+                )
+                
                 file = st.file_uploader("📎 Upload Assignment Question PDF (Optional)", type=["pdf"])
 
             if st.button("➕ Create Assignment", use_container_width=True, type="primary"):
+                # ... (Keep your file validation logic) ...
+                try:
+                    c.execute("""
+                    INSERT INTO assignments(title, subject_id, deadline, question_file, rubric)
+                    VALUES(?,?,?,?,?)
+                    """, (title.strip(), int(sub_id), str(deadline), file_path, rubric.strip()))
+                    # ... (Keep rest of commit logic) ...
 
                 if not subject_selected:
                     st.error("Please select a subject.")
