@@ -1541,100 +1541,98 @@ if role == "lecturer":
         
         st.title("📝 Assignment Management")
         
-        # ========== CREATE NEW ASSIGNMENT ==========
-        st.subheader("➕ Create New Assignment")
+        # ================= ASSIGNMENT MANAGEMENT TAB =================
+with tabs[3]:
+    st.title("📝 Assignment Management")
+    
+    # ========== CREATE NEW ASSIGNMENT ==========
+    st.subheader("➕ Create New Assignment")
 
-        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+    sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
 
-        if sems.empty:
-            st.warning("Please create a semester first.")
-        else:
-            col1, col2 = st.columns(2)
+    if sems.empty:
+        st.warning("Please create a semester first.")
+    else:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            sem_name = st.selectbox("Select Semester", sems["name"], key="assign_sem")
+            sem_id = int(sems[sems["name"] == sem_name]["id"].values[0])
+
+            subjects = pd.read_sql_query(
+                "SELECT * FROM subjects WHERE semester_id=?",
+                conn,
+                params=(sem_id,)
+            )
+
+            if subjects.empty:
+                st.warning("Please create a subject for this semester first.")
+                subject_selected = False
+            else:
+                subject_options = {
+                    row['name']: row['id']
+                    for _, row in subjects.iterrows()
+                }
+                selected_subject = st.selectbox("Select Subject", list(subject_options.keys()))
+                sub_id = int(subject_options[selected_subject])
+                subject_selected = True
+        
+        with col2:
+            title = st.text_input("Assignment Title", placeholder="e.g., Design of Ogee Weir")
+            deadline = st.date_input("Deadline")
             
-            with col1:
-                sem_name = st.selectbox("Select Semester", sems["name"], key="assign_sem")
-                sem_id = int(sems[sems["name"] == sem_name]["id"].values[0])
-
-                subjects = pd.read_sql_query(
-                    "SELECT * FROM subjects WHERE semester_id=?",
-                    conn,
-                    params=(sem_id,)
-                )
-
-                if subjects.empty:
-                    st.warning("Please create a subject for this semester first.")
-                    subject_selected = None
-                else:
-                    subject_options = {
-                        row['name']: row['id']
-                        for _, row in subjects.iterrows()
-                    }
-
-                    selected_subject = st.selectbox("Select Subject", list(subject_options.keys()))
-                    sub_id = int(subject_options[selected_subject])
-                    subject_selected = True
+            # Rubric / Model Answer Input
+            rubric = st.text_area(
+                "🎯 Marking Rubric / Model Answer", 
+                placeholder="Enter key steps, final values, or formulas you want the AI to check...",
+                help="The AI will use this specific key to grade submissions for this assignment."
+            )
             
-            with col2:
-                title = st.text_input("Assignment Title", placeholder="e.g., Design of Ogee Weir")
-                deadline = st.date_input("Deadline")
-                
-                # NEW: Rubric / Model Answer Input
-                rubric = st.text_area(
-                    "🎯 Marking Rubric / Model Answer", 
-                    placeholder="Enter key steps, final values, or formulas you want the AI to check...",
-                    help="The AI will use this specific key to grade submissions for this assignment."
-                )
-                
-                file = st.file_uploader("📎 Upload Assignment Question PDF (Optional)", type=["pdf"])
+            file = st.file_uploader("📎 Upload Assignment Question PDF (Optional)", type=["pdf"])
 
-            if st.button("➕ Create Assignment", use_container_width=True, type="primary"):
-                # ... (Keep your file validation logic) ...
-                try:
-                    c.execute("""
-                    INSERT INTO assignments(title, subject_id, deadline, question_file, rubric)
-                    VALUES(?,?,?,?,?)
-                    """, (title.strip(), int(sub_id), str(deadline), file_path, rubric.strip()))
-                    # ... (Keep rest of commit logic) ...
+        if st.button("➕ Create Assignment", use_container_width=True, type="primary"):
+            if not subject_selected:
+                st.error("Please select a subject.")
+            elif not title.strip():
+                st.error("Title cannot be empty.")
+            else:
+                file_path = ""
+                validation_passed = True
 
-                if not subject_selected:
-                    st.error("Please select a subject.")
-                elif not title.strip():
-                    st.error("Title cannot be empty.")
-                else:
-                    file_path = ""
-
-                    if file:
-                        # ✅ VALIDATE FILE
-                        is_valid, validation_msg = validate_file_upload(file, ALLOWED_ASSIGNMENT_TYPES, MAX_FILE_SIZE_MB)
+                # 1. Handle File Upload & Validation
+                if file:
+                    is_valid, validation_msg = validate_file_upload(file, ALLOWED_ASSIGNMENT_TYPES, MAX_FILE_SIZE_MB)
+                    if not is_valid:
+                        st.error(f"❌ File Validation Failed: {validation_msg}")
+                        validation_passed = False
+                    else:
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        file_path = f"assignment_files/{timestamp}_{file.name.replace(' ', '_')}"
                         
-                        if not is_valid:
-                            st.error("❌ File Validation Failed: {}".format(validation_msg))
-                        else:
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            file_path = "assignment_files/{}_{}.pdf".format(timestamp, file.name.replace(" ", "_"))
-                            
-                            # Safe file save operation
-                            success, result = safe_file_operation(
-                                lambda: open(file_path, "wb").write(file.getbuffer())
-                            )
-                            
-                            if not success:
-                                st.error("❌ File Save Failed: {}".format(result))
-                                file_path = ""
+                        success, result = safe_file_operation(
+                            lambda: open(file_path, "wb").write(file.getbuffer())
+                        )
+                        
+                        if not success:
+                            st.error(f"❌ File Save Failed: {result}")
+                            file_path = ""
+                            validation_passed = False
 
+                # 2. Database Insertion
+                if validation_passed:
                     try:
                         c.execute("""
-                        INSERT INTO assignments(title,subject_id,deadline,question_file)
-                        VALUES(?,?,?,?)
-                        """, (title.strip(), int(sub_id), str(deadline), file_path))
+                        INSERT INTO assignments(title, subject_id, deadline, question_file, rubric)
+                        VALUES(?,?,?,?,?)
+                        """, (title.strip(), int(sub_id), str(deadline), file_path, rubric.strip()))
 
                         conn.commit()
-                        st.success("✅ Assignment '{}' created successfully!".format(title.strip()))
+                        st.success(f"✅ Assignment '{title.strip()}' created successfully!")
                         st.balloons()
                         st.rerun()
 
                     except Exception as e:
-                        st.error("Database Error: {}".format(str(e)))
+                        st.error(f"Database Error: {str(e)}")
                         # Cleanup file if database insert failed
                         if file_path and os.path.exists(file_path):
                             try:
@@ -1642,7 +1640,8 @@ if role == "lecturer":
                             except:
                                 pass
 
-        st.divider()
+    st.divider()
+    # (Rest of your View/Edit Assignment code follows here...)
         
         # ========== VIEW ASSIGNMENTS ==========
         st.subheader("📋 Existing Assignments")
