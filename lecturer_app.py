@@ -2330,7 +2330,7 @@ if role == "lecturer":
         if not students_df_view.empty:
             student_options_del_st = {
                 "{} | {} | {}".format(
-                    row_v['Semester'] if row_cell_v['Semester'] else 'No Semester', 
+                    row_v['Semester'] if row_v['Semester'] else 'No Semester', 
                     row_v['Username'], 
                     row_v['Name']
                 ): row_v['ID']
