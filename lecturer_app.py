@@ -1982,7 +1982,7 @@ with tabs[3]:
                         with st.expander("Previous AI Feedback"):
                             st.write(row['ai_summary'])
 
-        # ANALYTICS
+    # ANALYTICS
     with tabs[5]: 
         st.title("📈 Performance Analytics")
         st.subheader("📊 Grade Statistics")
@@ -2033,7 +2033,6 @@ with tabs[3]:
                     has_marks = raw_marks is not None and str(raw_marks).lower() != 'nan' and str(raw_marks).strip() != ""
                     
                     # Check if submission date is actually there (Strict Check)
-                    # pd.isna() handles both None and the 'nan' values Pandas creates
                     is_actually_submitted = not pd.isna(row['Submission_Date']) and str(row['Submission_Date']).strip() != ""
 
                     # 2. Determine Status and Marks
@@ -2109,7 +2108,7 @@ with tabs[3]:
 
                 st.divider()
                 with st.expander("🔍 AI 'Common Error' Insight"):
-                   target_assign = st.selectbox("Select Assignment to Analyze Trends", df["Assignment"].unique()) 
+                    target_assign = st.selectbox("Select Assignment to Analyze Trends", df["Assignment"].unique()) 
                     if st.button("Analyze Class Trends"):
                         # Collect all feedback for this assignment
                         all_feedback = " ".join(df[df["Assignment"] == target_assign]["AI_Feedback"].astype(str))
@@ -2118,15 +2117,13 @@ with tabs[3]:
                             trend_prompt = f"Summarize the top 3 most common technical errors in these civil engineering grading feedbacks: {all_feedback}"
                             trend_res = trend_model.generate_content(trend_prompt)
                             st.info(trend_res.text)
+
                 # --- STEP 3: CREATE HORIZONTAL STATUS BOARD ---
                 st.divider()
                 st.subheader("📋 Master Submission & Grade Board")
                 
                 if not df.empty:
-                    # 1. Create a display string for each cell: 
-                    # If Submitted -> Show Marks
-                    # If Not Submitted & Overdue -> Show MISSED
-                    # If Not Submitted & Future -> Show Pending
+                    # 1. Create a display string for each cell
                     def format_cell(row):
                         if row['Status'] == "✅ Submitted":
                             return str(row['Marks'])
@@ -2139,7 +2136,6 @@ with tabs[3]:
                     display_df['Display_Value'] = display_df.apply(format_cell, axis=1)
 
                     # 2. Pivot the table
-                    # Index: Student & Subject | Columns: Assignment Titles | Values: Our formatted string
                     status_pivot = display_df.pivot_table(
                         index=['Student_Name', 'Username', 'Subject'],
                         columns='Assignment',
@@ -2168,7 +2164,6 @@ with tabs[3]:
                     st.info("No data available to generate the status board.")
         else:
             st.warning("⚠️ Please create semesters first.")
-        
 
     # MANAGE STUDENTS
     with tabs[6]:
