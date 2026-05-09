@@ -1537,7 +1537,7 @@ if role == "lecturer":
                     st.info("No subjects created yet.")
 
         # ASSIGNMENTS
-    # ================= ASSIGNMENT MANAGEMENT TAB =================
+# ================= ASSIGNMENT MANAGEMENT TAB =================
 with tabs[3]:
     st.title("📝 Assignment Management")
     
@@ -1637,181 +1637,178 @@ with tabs[3]:
                                 pass
 
     st.divider()
-    # (Rest of your View/Edit Assignment code follows here...)
-        
-      
-        
-        # ========== VIEW ASSIGNMENTS ==========
-        st.subheader("📋 Existing Assignments")
-        
-        # Filter option
-        view_sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
-        
-        if not view_sems.empty:
-            view_filter = st.selectbox("Filter by Semester", ["All"] + view_sems["name"].tolist(), key="view_assign_filter")
-            
-            if view_filter == "All":
-                all_assignments = pd.read_sql_query("""
-                SELECT 
-                    assignments.id as ID,
-                    assignments.title as Title,
-                    subjects.name as Subject,
-                    semesters.name as Semester,
-                    assignments.deadline as Deadline,
-                    assignments.question_file as File
-                FROM assignments
-                JOIN subjects ON assignments.subject_id = subjects.id
-                JOIN semesters ON subjects.semester_id = semesters.id
-                ORDER BY assignments.deadline DESC
-                """, conn)
-            else:
-                filter_sem_id = int(view_sems[view_sems["name"] == view_filter]["id"].values[0])
-                all_assignments = pd.read_sql_query("""
-                SELECT 
-                    assignments.id as ID,
-                    assignments.title as Title,
-                    subjects.name as Subject,
-                    semesters.name as Semester,
-                    assignments.deadline as Deadline,
-                    assignments.question_file as File
-                FROM assignments
-                JOIN subjects ON assignments.subject_id = subjects.id
-                JOIN semesters ON subjects.semester_id = semesters.id
-                WHERE semesters.id = ?
-                ORDER BY assignments.deadline DESC
-                """, conn, params=(filter_sem_id,))
 
-            if all_assignments.empty:
-                st.info("No assignments created yet.")
-            else:
-                # Show table without file path
-                st.dataframe(
-                    all_assignments[['ID', 'Semester', 'Subject', 'Title', 'Deadline']],
-                    use_container_width=True,
-                    hide_index=True
-                )
+    # ========== VIEW ASSIGNMENTS ==========
+    st.subheader("📋 Existing Assignments")
+    
+    # Filter option
+    view_sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+    
+    if not view_sems.empty:
+        view_filter = st.selectbox("Filter by Semester", ["All"] + view_sems["name"].tolist(), key="view_assign_filter")
+        
+        if view_filter == "All":
+            all_assignments = pd.read_sql_query("""
+            SELECT 
+                assignments.id as ID,
+                assignments.title as Title,
+                subjects.name as Subject,
+                semesters.name as Semester,
+                assignments.deadline as Deadline,
+                assignments.question_file as File
+            FROM assignments
+            JOIN subjects ON assignments.subject_id = subjects.id
+            JOIN semesters ON subjects.semester_id = semesters.id
+            ORDER BY assignments.deadline DESC
+            """, conn)
+        else:
+            filter_sem_id = int(view_sems[view_sems["name"] == view_filter]["id"].values[0])
+            all_assignments = pd.read_sql_query("""
+            SELECT 
+                assignments.id as ID,
+                assignments.title as Title,
+                subjects.name as Subject,
+                semesters.name as Semester,
+                assignments.deadline as Deadline,
+                assignments.question_file as File
+            FROM assignments
+            JOIN subjects ON assignments.subject_id = subjects.id
+            JOIN semesters ON subjects.semester_id = semesters.id
+            WHERE semesters.id = ?
+            ORDER BY assignments.deadline DESC
+            """, conn, params=(filter_sem_id,))
+
+        if all_assignments.empty:
+            st.info("No assignments created yet.")
+        else:
+            # Show table without file path
+            st.dataframe(
+                all_assignments[['ID', 'Semester', 'Subject', 'Title', 'Deadline']],
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            st.info("📊 Total Assignments: **{}**".format(len(all_assignments)))
+            
+            st.divider()
+            
+            # ========== ASSIGNMENT DETAILS WITH DELETE ==========
+            st.subheader("📄 Assignment Details")
+            
+            for _, assignment in all_assignments.iterrows():
                 
-                st.info("📊 Total Assignments: **{}**".format(len(all_assignments)))
+                # Get submission count
+                submission_count = pd.read_sql_query("""
+                SELECT COUNT(*) as count FROM submissions
+                WHERE assignment_id=?
+                """, conn, params=(assignment['ID'],)).iloc[0]['count']
                 
-                st.divider()
+                deadline_display = format_deadline_display(assignment['Deadline'])
                 
-                # ========== ASSIGNMENT DETAILS WITH DELETE ==========
-                st.subheader("📄 Assignment Details")
-                
-                for _, assignment in all_assignments.iterrows():
+                with st.expander("{} - {} - {} | {}".format(
+                    assignment['Semester'],
+                    assignment['Subject'],
+                    assignment['Title'],
+                    deadline_display
+                )):
                     
-                    # Get submission count
-                    submission_count = pd.read_sql_query("""
-                    SELECT COUNT(*) as count FROM submissions
-                    WHERE assignment_id=?
-                    """, conn, params=(assignment['ID'],)).iloc[0]['count']
+                    col_detail1, col_detail2 = st.columns([2, 1])
                     
-                    deadline_display = format_deadline_display(assignment['Deadline'])
+                    with col_detail1:
+                        st.write("**Semester:** {}".format(assignment['Semester']))
+                        st.write("**Subject:** {}".format(assignment['Subject']))
+                        st.write("**Title:** {}".format(assignment['Title']))
+                        st.write("**Deadline:** {}".format(assignment['Deadline']))
+                        st.metric("📊 Total Submissions", submission_count)
                     
-                    with st.expander("{} - {} - {} | {}".format(
-                        assignment['Semester'],
-                        assignment['Subject'],
-                        assignment['Title'],
-                        deadline_display
-                    )):
+                    with col_detail2:
+                        # Download assignment file
+                        if assignment['File'] and os.path.exists(assignment['File']):
+                            with open(assignment['File'], "rb") as f:
+                                st.download_button(
+                                    "📥 Download Question",
+                                    f,
+                                    file_name=os.path.basename(assignment['File']),
+                                    key="download_assign_{}".format(assignment['ID']),
+                                    use_container_width=True
+                                )
+                        else:
+                            st.info("No file uploaded")
+                    
+                    st.divider()
+                    
+                    # ========== EDIT ASSIGNMENT ==========
+                    with st.expander("✏️ Edit Assignment Details"):
                         
-                        col_detail1, col_detail2 = st.columns([2, 1])
+                        col_edit1, col_edit2 = st.columns(2)
                         
-                        with col_detail1:
-                            st.write("**Semester:** {}".format(assignment['Semester']))
-                            st.write("**Subject:** {}".format(assignment['Subject']))
-                            st.write("**Title:** {}".format(assignment['Title']))
-                            st.write("**Deadline:** {}".format(assignment['Deadline']))
-                            st.metric("📊 Total Submissions", submission_count)
+                        with col_edit1:
+                            new_title = st.text_input(
+                                "New Title",
+                                value=assignment['Title'],
+                                key="edit_title_{}".format(assignment['ID'])
+                            )
                         
-                        with col_detail2:
-                            # Download assignment file
-                            if assignment['File'] and os.path.exists(assignment['File']):
-                                with open(assignment['File'], "rb") as f:
-                                    st.download_button(
-                                        "📥 Download Question",
-                                        f,
-                                        file_name=os.path.basename(assignment['File']),
-                                        key="download_assign_{}".format(assignment['ID']),
-                                        use_container_width=True
-                                    )
+                        with col_edit2:
+                            current_deadline = datetime.strptime(assignment['Deadline'], '%Y-%m-%d').date()
+                            new_deadline = st.date_input(
+                                "New Deadline",
+                                value=current_deadline,
+                                key="edit_deadline_{}".format(assignment['ID'])
+                            )
+                        
+                        if st.button("💾 Save Changes", key="save_edit_{}".format(assignment['ID']), type="primary"):
+                            
+                            if not new_title.strip():
+                                st.error("Title cannot be empty")
+                            elif new_title == assignment['Title'] and str(new_deadline) == assignment['Deadline']:
+                                st.info("No changes made")
                             else:
-                                st.info("No file uploaded")
-                        
-                        st.divider()
-                        
-                        # ========== EDIT ASSIGNMENT ==========
-                        with st.expander("✏️ Edit Assignment Details"):
-                            
-                            col_edit1, col_edit2 = st.columns(2)
-                            
-                            with col_edit1:
-                                new_title = st.text_input(
-                                    "New Title",
-                                    value=assignment['Title'],
-                                    key="edit_title_{}".format(assignment['ID'])
-                                )
-                            
-                            with col_edit2:
-                                current_deadline = datetime.strptime(assignment['Deadline'], '%Y-%m-%d').date()
-                                new_deadline = st.date_input(
-                                    "New Deadline",
-                                    value=current_deadline,
-                                    key="edit_deadline_{}".format(assignment['ID'])
-                                )
-                            
-                            if st.button("💾 Save Changes", key="save_edit_{}".format(assignment['ID']), type="primary"):
+                                success, message = update_assignment(assignment['ID'], new_title, new_deadline)
                                 
-                                if not new_title.strip():
-                                    st.error("Title cannot be empty")
-                                elif new_title == assignment['Title'] and str(new_deadline) == assignment['Deadline']:
-                                    st.info("No changes made")
-                                else:
-                                    success, message = update_assignment(assignment['ID'], new_title, new_deadline)
-                                    
-                                    if success:
-                                        st.success("✅ {}".format(message))
-                                        st.rerun()
-                                    else:
-                                        st.error("❌ {}".format(message))
-                        
-                        # Delete button
-                        col_del1, col_del2 = st.columns([2, 1])
-                        
-                        with col_del1:
-                            st.warning("⚠️ **Delete Assignment:** This will remove all student submissions for this assignment.")
-                        
-                        with col_del2:
-                            if st.button("🗑️ Delete Assignment", key="delete_assign_{}".format(assignment['ID']), type="primary", use_container_width=True):
-                                
-                                try:
-                                    # Delete all submissions first
-                                    submissions = pd.read_sql_query("""
-                                    SELECT submission_file FROM submissions
-                                    WHERE assignment_id=?
-                                    """, conn, params=(assignment['ID'],))
-                                    
-                                    # Delete submission files
-                                    for _, sub in submissions.iterrows():
-                                        if sub['submission_file'] and os.path.exists(sub['submission_file']):
-                                            os.remove(sub['submission_file'])
-                                    
-                                    # Delete submissions from database
-                                    c.execute("DELETE FROM submissions WHERE assignment_id=?", (assignment['ID'],))
-                                    
-                                    # Delete assignment file
-                                    if assignment['File'] and os.path.exists(assignment['File']):
-                                        os.remove(assignment['File'])
-                                    
-                                    # Delete assignment from database
-                                    c.execute("DELETE FROM assignments WHERE id=?", (assignment['ID'],))
-                                    
-                                    conn.commit()
-                                    st.success("✅ Assignment '{}' deleted successfully!".format(assignment['Title']))
+                                if success:
+                                    st.success("✅ {}".format(message))
                                     st.rerun()
-                                    
-                                except Exception as e:
-                                    st.error("Error deleting assignment: {}".format(str(e)))
+                                else:
+                                    st.error("❌ {}".format(message))
+                    
+                    # Delete button
+                    col_del1, col_del2 = st.columns([2, 1])
+                    
+                    with col_del1:
+                        st.warning("⚠️ **Delete Assignment:** This will remove all student submissions for this assignment.")
+                    
+                    with col_del2:
+                        if st.button("🗑️ Delete Assignment", key="delete_assign_{}".format(assignment['ID']), type="primary", use_container_width=True):
+                            
+                            try:
+                                # Delete all submissions first
+                                submissions = pd.read_sql_query("""
+                                SELECT submission_file FROM submissions
+                                WHERE assignment_id=?
+                                """, conn, params=(assignment['ID'],))
+                                
+                                # Delete submission files
+                                for _, sub in submissions.iterrows():
+                                    if sub['submission_file'] and os.path.exists(sub['submission_file']):
+                                        os.remove(sub['submission_file'])
+                                
+                                # Delete submissions from database
+                                c.execute("DELETE FROM submissions WHERE assignment_id=?", (assignment['ID'],))
+                                
+                                # Delete assignment file
+                                if assignment['File'] and os.path.exists(assignment['File']):
+                                    os.remove(assignment['File'])
+                                
+                                # Delete assignment from database
+                                c.execute("DELETE FROM assignments WHERE id=?", (assignment['ID'],))
+                                
+                                conn.commit()
+                                st.success("✅ Assignment '{}' deleted successfully!".format(assignment['Title']))
+                                st.rerun()
+                                
+                            except Exception as e:
+                                st.error("Error deleting assignment: {}".format(str(e)))
     # SUBMISSIONS & AI
     with tabs[4]:
 
