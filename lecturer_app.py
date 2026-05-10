@@ -2309,18 +2309,29 @@ if role == "lecturer":
 
         if csv_file:
             df_csv = pd.read_csv(csv_file)
+
+            #1. clean the headers instantly 
+            df_csv.columns=df_csv.columns.str.strip().str.lower()
             required_cols = {"name", "username", "password", "semester"}
 
             if not required_cols.issubset(df_csv.columns):
-                st.error("CSV must contain columns: name, username, password, semester")
+                st.error("CSV must contain columns: Name, Username, password, Semester")
+                st.write("Your columns are currently reading as:", list(df_csv.columns))
             else:
-                if st.button("Upload Students"):
+                st.write("🔍 Data Preview:", df_csv.head())
+                if st.button("🚀 Process & Register Students"):
                     sems = pd.read_sql_query("SELECT * FROM semesters", conn)
                     success_count = 0
                     error_count = 0
 
                     for _, row in df_csv.iterrows():
-                        sem_match = sems[sems["name"] == row["semester"]]
+                        clean_name = str(row["name"]).strip()
+                        clean_user = str(row["username"]).strip()
+                        clean_sem = str(row["semester"]).strip()
+
+                        raw_pw = str(row["password"]).replace('.0', '').strip()
+                        
+                        sem_match = sems[sems["name"] == clean_sem]
 
                         if sem_match.empty:
                             error_count += 1
@@ -2333,9 +2344,9 @@ if role == "lecturer":
                             INSERT INTO users(full_name, username, password, role, semester_id)
                             VALUES(?,?,?,?,?)
                             """, (
-                                row["name"],
-                                row["username"],
-                                hash_password(str(row["password"])),
+                                clean_name,
+                                clean_user,
+                                hash_password(raw_pw),
                                 "student",
                                 int(sem_id)
                             ))
