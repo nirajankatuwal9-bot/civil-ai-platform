@@ -264,7 +264,7 @@ def hash_password(p):
     return bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
 
 def check_password(p, hashed):
-    try:
+    try:
         return bcrypt.checkpw(p.encode(), hashed.encode())
     except:
         return False
