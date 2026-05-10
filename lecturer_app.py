@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import sqlite3
@@ -267,8 +266,8 @@ def hash_password(p):
 def check_password(p, hashed):
     try:
         return bcrypt.checkpw(p.encode(), hashed.encode())
-        except:
-            return False
+    except:
+        return False
 
 # ================= DEFAULT LECTURER =================
 
@@ -1560,7 +1559,7 @@ if role == "lecturer":
             with col2:
                 title = st.text_input("Assignment Title", placeholder="e.g., Design of RCC Beam")
                 deadline = st.date_input("Deadline")
-            
+                
                 file = st.file_uploader("📎 Upload Assignment Question PDF (Optional)", type=["pdf"])
 
             if st.button("➕ Create Assignment", use_container_width=True, type="primary"):
@@ -1958,8 +1957,10 @@ if role == "lecturer":
                             st.write(row['ai_summary'])
 
         # ANALYTICS
-    with tabs[5]: 
+    with tabs[5]:  # Adjust index if needed
+        
         st.title("📈 Performance Analytics")
+        
         st.subheader("📊 Grade Statistics")
         
         sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
@@ -1967,217 +1968,152 @@ if role == "lecturer":
         if not sems.empty:
             selected_sem = st.selectbox("Select Semester", ["All"] + sems["name"].tolist(), key="analytics_sem")
             
-            # --- STEP 1: THE MASTER QUERY (Identifies every student and every assignment) ---
-            master_query = """
-            SELECT 
-                semesters.name as Semester,
-                users.full_name as Student_Name,
-                users.username as Username,
-                subjects.name as Subject,
-                assignments.title as Assignment,
-                assignments.deadline as Deadline,
-                submissions.marks as Marks,
-                submissions.submission_time as Submission_Date,
-                submissions.ai_summary as AI_Feedback
-            FROM users
-            CROSS JOIN assignments 
-            JOIN subjects ON assignments.subject_id = subjects.id
-            JOIN semesters ON subjects.semester_id = semesters.id
-            LEFT JOIN submissions ON users.id = submissions.student_id AND assignments.id = submissions.assignment_id
-            WHERE users.role = 'student' 
-            AND users.semester_id = semesters.id
-            """
-            
-            if selected_sem != "All":
-                raw_df = pd.read_sql_query(master_query + " AND semesters.name = ?", conn, params=(selected_sem,))
+            if selected_sem == "All":
+                df = pd.read_sql_query("""
+                SELECT 
+                    semesters.name as Semester,
+                    subjects.name as Subject,
+                    assignments.title as Assignment,
+                    users.full_name as Student_Name,
+                    users.username as Username,
+                    submissions.submission_time as Submission_Date,
+                    assignments.deadline as Deadline,
+                    submissions.marks as Marks,
+                    submissions.ai_summary as AI_Feedback
+                FROM submissions
+                JOIN assignments ON submissions.assignment_id=assignments.id
+                JOIN subjects ON assignments.subject_id = subjects.id
+                JOIN semesters ON subjects.semester_id = semesters.id
+                JOIN users ON submissions.student_id = users.id
+                WHERE submissions.marks IS NOT NULL AND submissions.marks != ''
+                ORDER BY semesters.name, subjects.name, assignments.title, users.full_name
+                """, conn)
             else:
-                raw_df = pd.read_sql_query(master_query, conn)
+                sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
+                df = pd.read_sql_query("""
+                SELECT 
+                    semesters.name as Semester,
+                    subjects.name as Subject,
+                    assignments.title as Assignment,
+                    users.full_name as Student_Name,
+                    users.username as Username,
+                    submissions.submission_time as Submission_Date,
+                    assignments.deadline as Deadline,
+                    submissions.marks as Marks,
+                    submissions.ai_summary as AI_Feedback
+                FROM submissions
+                JOIN assignments ON submissions.assignment_id=assignments.id
+                JOIN subjects ON assignments.subject_id = subjects.id
+                JOIN semesters ON subjects.semester_id = semesters.id
+                JOIN users ON submissions.student_id = users.id
+                WHERE semesters.id = ? AND submissions.marks IS NOT NULL AND submissions.marks != ''
+                ORDER BY subjects.name, assignments.title, users.full_name
+                """, conn, params=(sem_id,))
 
-            if not raw_df.empty:
-                # --- STEP 2: DATA PROCESSING (Assigning 0 for Negligence) ---
-                processed_list = []
-                current_date = datetime.now().date()
-
-                for _, row in raw_df.iterrows():
-                    # 1. Standardize Inputs
-                    deadline_date = datetime.strptime(str(row['Deadline']), '%Y-%m-%d').date()
-                    current_date = datetime.now().date()
-                    
-                    # Check if marks are valid
-                    raw_marks = row['Marks']
-                    has_marks = raw_marks is not None and str(raw_marks).lower() != 'nan' and str(raw_marks).strip() != ""
-                    
-                    # Check if submission date is actually there (Strict Check)
-                    # pd.isna() handles both None and the 'nan' values Pandas creates
-                    is_actually_submitted = not pd.isna(row['Submission_Date']) and str(row['Submission_Date']).strip() != ""
-
-                    # 2. Determine Status and Marks
-                    if is_actually_submitted:
-                        # Case: Student uploaded a file
-                        status = "✅ Submitted"
-                        final_score = raw_marks if has_marks else "Pending"
-                    
-                    elif current_date > deadline_date:
-                        # Case: No file AND deadline has passed
-                        status = "🔴 MISSED"
-                        final_score = 0  # Force 0 for negligence
-                    
-                    else:
-                        # Case: No file BUT still has time
-                        status = "🟡 Pending"
-                        final_score = "TBD"
-
-                    processed_list.append({
-                        "Semester": row['Semester'],
-                        "Student_Name": row['Student_Name'],
-                        "Username": row['Username'],
-                        "Subject": row['Subject'],
-                        "Assignment": row['Assignment'],
-                        "Deadline": row['Deadline'],
-                        "Marks": final_score,
-                        "Status": status,
-                        "AI_Feedback": row['AI_Feedback'] if row['AI_Feedback'] else "No Feedback"
-                    })
-
-                df = pd.DataFrame(processed_list)
-                # Helper for calculations
-                df["numeric_marks"] = pd.to_numeric(df["Marks"], errors="coerce").fillna(0)
-
+            if not df.empty:
+                df["marks"] = pd.to_numeric(df["Marks"], errors="coerce")
+                
                 # ========== DOWNLOAD OPTIONS ==========
                 st.subheader("📥 Download Grade Reports")
+                
                 col1, col2, col3 = st.columns(3)
                 
+                # Option 1: Detailed Report (with feedback)
                 with col1:
                     csv_detailed = df.to_csv(index=False).encode('utf-8')
-                    st.download_button("📄 Detailed Report (With Feedbacks)", csv_detailed, f"Detailed_{selected_sem}.csv", 'text/csv', use_container_width=True)
+                    st.download_button(
+                        label="📄 Detailed Report (with AI Feedback)",
+                        data=csv_detailed,
+                        file_name="Grades_Detailed_{}.csv".format(selected_sem),
+                        mime='text/csv',
+                        use_container_width=True
+                    )
                 
+                # Option 2: Summary Report (without feedback)
                 with col2:
-                    df_summary = df[['Semester', 'Subject', 'Assignment', 'Student_Name', 'Username', 'Deadline', 'Status', 'Marks']]
-                    st.download_button("📊 Summary Report (Incl. 0s)", df_summary.to_csv(index=False).encode('utf-8'), f"Summary_{selected_sem}.csv", 'text/csv', use_container_width=True)
+                    df_summary = df[['Semester', 'Subject', 'Assignment', 'Student_Name', 'Username', 'Submission_Date', 'Deadline', 'Marks']]
+                    csv_summary = df_summary.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📊 Summary Report (No Feedback)",
+                        data=csv_summary,
+                        file_name="Grades_Summary_{}.csv".format(selected_sem),
+                        mime='text/csv',
+                        use_container_width=True
+                    )
                 
+                # Option 3: Student-wise Aggregated Report
                 with col3:
-                    # Student-wise Summary (Pivot Table)
-                    df_pivot = df.pivot_table(index=['Semester', 'Student_Name', 'Username', 'Subject'], 
-                                            columns='Assignment', values='numeric_marks', aggfunc='first').reset_index()
-                    # Add Semester Average
-                    assign_cols = [c for c in df_pivot.columns if c not in ['Semester', 'Student_Name', 'Username', 'Subject']]
-                    df_pivot['Avg_Score'] = df_pivot[assign_cols].mean(axis=1).round(2)
-                    st.download_button("📈 Student-wise Summary", df_pivot.to_csv(index=False).encode('utf-8'), f"Student_Pivot_{selected_sem}.csv", 'text/csv', use_container_width=True)
-
+                    # Create pivot table: Students x Assignments
+                    df_pivot = df.pivot_table(
+                        index=['Semester', 'Student_Name', 'Username', 'Subject'],
+                        columns='Assignment',
+                        values='marks',
+                        aggfunc='first'
+                    ).reset_index()
+                    
+                    # Add average column
+                    assignment_cols = [col for col in df_pivot.columns if col not in ['Semester', 'Student_Name', 'Username', 'Subject']]
+                    df_pivot['Average'] = df_pivot[assignment_cols].mean(axis=1).round(2)
+                    
+                    csv_pivot = df_pivot.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📈 Student-wise Summary",
+                        data=csv_pivot,
+                        file_name="Grades_StudentWise_{}.csv".format(selected_sem),
+                        mime='text/csv',
+                        use_container_width=True
+                    )
+                
                 st.divider()
                 
                 # ========== VISUALIZATIONS ==========
                 st.subheader("📊 Average Marks by Assignment")
-                avg_marks = df.groupby("Assignment")["numeric_marks"].mean()
+                avg_marks = df.groupby("Assignment")["marks"].mean()
                 st.bar_chart(avg_marks)
                 
-                col_m1, col_m2, col_m3 = st.columns(3)
-                col_m1.metric("Total Expectations", len(df))
-                col_m2.metric("Class Average", f"{df['numeric_marks'].mean():.2f}/10")
-                col_m3.metric("Negligence Cases", len(df[df['Status'] == "🔴 MISSED"]))
-
                 st.divider()
-                st.subheader("📚 Subject-wise Performance")
-                subject_stats = df.groupby('Subject').agg({'numeric_marks': ['count', 'mean', 'min', 'max']}).round(2)
-                subject_stats.columns = ['Total Assignments', 'Avg Grade', 'Min', 'Max']
-                st.dataframe(subject_stats, use_container_width=True)
-
-                st.divider()
-                # --- STEP 3: CREATE HORIZONTAL STATUS BOARD ---
-                st.divider()
-                st.subheader("📋 Master Submission & Grade Board")
                 
-                if not df.empty:
-                    # 1. Create a display string for each cell: 
-                    # If Submitted -> Show Marks
-                    # If Not Submitted & Overdue -> Show MISSED
-                    # If Not Submitted & Future -> Show Pending
-                    def format_cell(row):
-                        if row['Status'] == "✅ Submitted":
-                            return str(row['Marks'])
-                        elif row['Status'] == "🔴 MISSED":
-                            return "🔴 MISSED"
-                        else:
-                            return "🟡 Pending"
-
-                    display_df = df.copy()
-                    display_df['Display_Value'] = display_df.apply(format_cell, axis=1)
-
-                    # 2. Pivot the table
-                    # Index: Student & Subject | Columns: Assignment Titles | Values: Our formatted string
-                    status_pivot = display_df.pivot_table(
-                        index=['Student_Name', 'Username', 'Subject'],
-                        columns='Assignment',
-                        values='Display_Value',
-                        aggfunc='first'
-                    ).reset_index()
-
-                    # 3. Clean up column names and display
-                    st.info("💡 **Legend:** Numeric value = Grade received | 🔴 MISSED = Deadline passed | 🟡 Pending = Due in future")
-                    
-                    st.dataframe(
-                        status_pivot, 
-                        use_container_width=True, 
-                        hide_index=True,
-                        column_config={
-                            "Username": "Roll No",
-                            "Student_Name": "Student Name"
-                        }
-                    )
-
-                    # Show a summary count for the lecturer
-                    total_missed = len(df[df['Status'] == "🔴 MISSED"])
-                    if total_missed > 0:
-                        st.warning(f"🚩 Total negligent instances detected: **{total_missed}**")
-                else:
-                    st.info("No data available to generate the status board.")
+                # Metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Submissions", len(df))
+                with col2:
+                    st.metric("Average Score", "{:.2f}/10".format(df['marks'].mean()))
+                with col3:
+                    st.metric("Highest Score", "{}/10".format(df['marks'].max()))
+                
+                st.divider()
+                
+                # ========== SUBJECT-WISE BREAKDOWN ==========
+                st.subheader("📚 Subject-wise Performance")
+                
+                subject_stats = df.groupby('Subject').agg({
+                    'marks': ['count', 'mean', 'min', 'max']
+                }).round(2)
+                subject_stats.columns = ['Total Submissions', 'Average', 'Lowest', 'Highest']
+                st.dataframe(subject_stats, use_container_width=True)
+                
+                st.divider()
+                
+                # ========== RAW DATA TABLE ==========
+                st.subheader("📋 Detailed Grade Table")
+                st.dataframe(
+                    df[['Semester', 'Subject', 'Assignment', 'Student_Name', 'Username', 'Marks']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+            else:
+                st.info("📭 No graded submissions yet for this semester.")
         else:
             st.warning("⚠️ Please create semesters first.")
-        
 
     # MANAGE STUDENTS
     with tabs[6]:
         
         # TEMPORARY FIX BUTTON - Remove after fixing all students
         st.subheader("⚠️ Emergency Fix for Existing Students")
-        st.divider()
         
-        # ========== SEARCH STUDENTS ==========
-        st.subheader("🔍 Search Students")
-        
-        col_search1, col_search2 = st.columns([2, 1])
-        
-        with col_search1:
-            search_query = st.text_input(
-                "Search by name or username",
-                placeholder="e.g., John or john123",
-                key="search_students_input"
-            )
-        
-        with col_search2:
-            sems_search = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
-            search_sem_filter = st.selectbox(
-                "Filter by Semester",
-                ["All"] + sems_search["name"].tolist(),
-                key="search_sem_filter"
-            )
-        
-        if search_query:
-            sem_filter_id = None
-            if search_sem_filter != "All":
-                sem_filter_id = int(sems_search[sems_search["name"] == search_sem_filter]["id"].values[0])
-            
-            search_results = search_students(search_query, sem_filter_id)
-            
-            if search_results.empty:
-                st.info("🔍 No students found matching '{}'".format(search_query))
-            else:
-                st.success("✅ Found {} student(s)".format(len(search_results)))
-                st.dataframe(
-                    search_results[['full_name', 'username', 'semester']],
-                    use_container_width=True,
-                    hide_index=True
-                )
         if st.button("🔧 Fix ALL Students with NULL semester"):
             # Get first semester as default
             default_sem = pd.read_sql_query("SELECT id FROM semesters ORDER BY id ASC LIMIT 1", conn)
@@ -2320,7 +2256,7 @@ if role == "lecturer":
                     st.success("{} students uploaded successfully. {} failed.".format(success_count, error_count))
                     st.rerun()
 
-                st.divider()
+        st.divider()
         st.subheader("📋 Registered Student List")
 
         # 1. Filter Dropdown for Sorting/Viewing
@@ -2408,32 +2344,13 @@ if role == "lecturer":
                     student_id = student_options[selected_student]
                     
                     try:
-                        # Get all submission files for this student
-                        submission_files = pd.read_sql_query(
-                            "SELECT submission_file FROM submissions WHERE student_id=?",
-                            conn,
-                            params=(int(student_id),)
-                        )
-                        
-                        # Delete all submission files
-                        deleted_files = 0
-                        for _, row in submission_files.iterrows():
-                            if row['submission_file'] and os.path.exists(row['submission_file']):
-                                try:
-                                    os.remove(row['submission_file'])
-                                    deleted_files += 1
-                                except:
-                                    pass
-                        
-                        # Delete submissions from database
+                        # Delete submissions first (foreign key constraint)
                         c.execute("DELETE FROM submissions WHERE student_id=?", (int(student_id),))
-                        
-                        # Delete user
+                        # Then delete user
                         c.execute("DELETE FROM users WHERE id=?", (int(student_id),))
-                        
                         conn.commit()
                         
-                        st.success("✅ Student removed! Deleted {} submission files.".format(deleted_files))
+                        st.success("✅ Student removed successfully!")
                         st.rerun()
                         
                     except Exception as e:
@@ -3367,6 +3284,7 @@ elif role == "student":
                     if not existing_submission.empty:
                         # Case A: Already submitted
                         st.success("✅ You have already submitted this assignment.")
+
                         submission_time = existing_submission.iloc[0]["submission_time"]
                         st.write("**Submitted on:** {}".format(submission_time))
 
@@ -3408,71 +3326,47 @@ elif role == "student":
                             key="upload_{}".format(row['id'])
                         )
 
-                        if st.button("Submit Assignment", key="submit_{}".format(row['id']), type="primary", use_container_width=True):
-                            
+                        if st.button("Submit Assignment", key="submit_{}".format(row['id']), type="primary"):
+
                             if not uploaded:
                                 st.warning("⚠️ Please upload a PDF file before submitting.")
                             else:
-                                # ✅ VALIDATE FILE
-                                is_valid, validation_msg = validate_file_upload(uploaded, ALLOWED_SUBMISSION_TYPES, MAX_FILE_SIZE_MB)
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                file_path = "submission_files/" + str(st.session_state.username) + "_" + str(row['id']) + "_" + timestamp + ".pdf"
+
+                                with open(file_path, "wb") as f:
+                                    f.write(uploaded.getbuffer())
+
+                                c.execute("""
+                                INSERT INTO submissions(
+                                    assignment_id,
+                                    student_id,
+                                    submission_time,
+                                    submission_file,
+                                    marks,
+                                    ai_summary
+                                )
+                                VALUES(?,?,?,?,?,?)
+                                """, (
+                                    int(row["id"]),
+                                    int(st.session_state.user_id),
+                                    str(datetime.now()),
+                                    file_path,
+                                    "",
+                                    ""
+                                ))
+
+                                conn.commit()
                                 
-                                if not is_valid:
-                                    st.error("❌ {}".format(validation_msg))
+                                # Check if submitted on time
+                                if days >= 0:
+                                    st.success("✅ Assignment submitted successfully on time!")
                                 else:
-                                    # ✅ CHECK DEADLINE (Double-check on server side)
-                                    is_late, late_msg = check_deadline_passed(row['deadline'])
-                                    
-                                    if is_late:
-                                        st.error("🔒 Submission blocked: {}".format(late_msg))
-                                    else:
-                                        try:
-                                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                            file_path = "submission_files/{}_{}_{}.pdf".format(
-                                                st.session_state.username,
-                                                row['id'],
-                                                timestamp
-                                            )
+                                    st.warning("⚠️ Assignment submitted {} days late.".format(abs(days)))
+                                
+                                st.balloons()
+                                st.rerun()
 
-                                            # Safe file save
-                                            with open(file_path, "wb") as f:
-                                                f.write(uploaded.getbuffer())
-                                            
-                                            # Apply watermark
-                                            apply_watermark(
-                                                file_path,
-                                                watermark_text="🌊 The N-Streamlines | Student: {}".format(st.session_state.username)
-                                            )
-
-                                            # Save to database
-                                            c.execute("""
-                                            INSERT INTO submissions(
-                                                assignment_id, student_id, submission_time, 
-                                                submission_file, marks, ai_summary
-                                            )
-                                            VALUES(?,?,?,?,?,?)
-                                            """, (
-                                                int(row["id"]),
-                                                int(st.session_state.user_id),
-                                                str(datetime.now()),
-                                                file_path,
-                                                "",
-                                                ""
-                                            ))
-
-                                            conn.commit()
-                                            st.success("✅ Assignment submitted successfully!")
-                                            st.balloons()
-                                            st.rerun()
-                                        
-                                        except Exception as e:
-                                            st.error("Submission Error: {}".format(str(e)))
-                                            # Cleanup file if database insert failed
-                                            if os.path.exists(file_path):
-                                                try:
-                                                    os.remove(file_path)
-                                                except:
-                                                    pass
-               
         # ================= STUDY MATERIALS =================
     with tabs[1]:
         
@@ -3642,4 +3536,3 @@ elif role == "student":
                 
         except Exception as e:
             st.error("⚠️ System error loading results. Please contact Er. Nirajan Katuwal.")
-         
