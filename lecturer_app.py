@@ -265,9 +265,9 @@ def hash_password(p):
 
 def check_password(p, hashed):
     try:
-        return bcrypt.checkpw(p.encode(), hashed.encode())
-    except:
-        return False
+        return bcrypt.checkpw(p.encode(), hashed.encode())
+        except:
+            return False
 
 # ================= DEFAULT LECTURER =================
 
