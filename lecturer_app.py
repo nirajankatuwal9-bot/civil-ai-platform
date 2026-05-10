@@ -273,7 +273,8 @@ def check_password(p, hashed):
 
 admin_exists = pd.read_sql_query(
     "SELECT * FROM users WHERE username='admin'",
-    conn
+    
+    conn
 )
 
 if admin_exists.empty:
