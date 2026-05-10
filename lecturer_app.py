@@ -17,9 +17,9 @@ import fitz
 # ================= CONFIG =================
 
 st.set_page_config(
-    page_title=" The N-streamlines",
-    page_icon="🌊",
-    layout="wide"
+    page_title="The N-streamlines",
+    page_icon="🌊",
+    layout="wide"
 )
 # ================= MOBILE RESPONSIVENESS =================
 
