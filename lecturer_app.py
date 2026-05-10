@@ -1566,7 +1566,7 @@ if role == "lecturer":
             
             with col2:
                 title = st.text_input("Assignment Title", placeholder="e.g., Design of RCC Beam")
-                deadline = st.date_input("Deadline"):
+                deadline = st.date_input("Deadline")
                 rubric_text = st.text_area("🎯 Marking Rubric / Model Answer", placeholder="Key steps, formulas, or point breakdowns...")
                 
                 file = st.file_uploader("📎 Upload Assignment Question PDF (Optional)", type=["pdf"])
