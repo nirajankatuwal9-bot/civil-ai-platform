@@ -2334,6 +2334,8 @@ if role == "lecturer":
                         sem_match = sems[sems["name"] == clean_sem]
 
                         if sem_match.empty:
+                            st.warning(f"⚠️ Semester '{clean_sem}' not found for user {clean_user}. Skipping.")
+                            
                             error_count += 1
                             continue
 
