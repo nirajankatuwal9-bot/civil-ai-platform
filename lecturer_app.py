@@ -2996,7 +2996,7 @@ if role == "lecturer":
                         st.divider()
                         st.subheader("📊 Personal Growth & Performance")
                         
-                        submissions_df = profile_data['submissions']
+                        submissions_df = profile['submissions']
 
                         # Filter only the assignments that have actually been graded by the AI
                         graded_df = submissions_df[submissions_df['marks'].notna() & (submissions_df['marks'] != '')].copy()
