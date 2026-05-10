@@ -272,7 +272,7 @@ def check_password(p, hashed):
 # ================= DEFAULT LECTURER =================
 
 admin_exists = pd.read_sql_query(
-    "SELECT * FROM users WHERE username='admin'",
+    "SELECT * FROM users WHERE username='admin'",
     conn
 )
 
