@@ -12,6 +12,10 @@ import bcrypt
 from PIL import Image
 import google.generativeai as genai
 import fitz
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
 
 
 # ================= CONFIG =================
@@ -185,7 +189,12 @@ CREATE TABLE IF NOT EXISTS users(
     semester_id INTEGER
 )
 """)
-
+# Safe auto-migration for existing users table
+try:
+    c.execute("ALTER TABLE users ADD COLUMN email TEXT")
+    conn.commit()
+except:
+    pass # Column already exists
 # SEMESTERS
 c.execute("""
 CREATE TABLE IF NOT EXISTS semesters(
@@ -532,6 +541,44 @@ def apply_watermark(file_path, watermark_text="🌊 The N-Streamlines | Er. Nira
         os.replace(temp_path, file_path)
     except Exception as e:
         st.error(f"Watermark Engine Error: {e}")    
+
+#===================PUSH Email===============================
+def send_email_notification(target_semester_id, subject, message_body):
+    """Fetches student emails and sends a secure BCC email broadcast."""
+    
+    # 1. Fetch student emails for this semester
+    if target_semester_id:
+        df = pd.read_sql_query("SELECT email FROM users WHERE role='student' AND semester_id=? AND email IS NOT NULL AND email != ''", conn, params=(int(target_semester_id),))
+    else:
+        df = pd.read_sql_query("SELECT email FROM users WHERE role='student' AND email IS NOT NULL AND email != ''", conn)
+    
+    emails = df['email'].tolist()
+    if not emails:
+        return False, "No valid student emails found."
+
+    # 2. Your Platform Credentials (Update these!)
+    SENDER_EMAIL = "your_platform_email@gmail.com" 
+    APP_PASSWORD = "your_16_digit_app_password"
+
+    try:
+        # 3. Construct the Email
+        msg = MIMEMultipart()
+        msg['From'] = f"The N-Streamlines <{SENDER_EMAIL}>"
+        msg['Subject'] = subject
+        msg.attach(MIMEText(message_body, 'plain'))
+        
+        # 4. Connect to Gmail and Send
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(SENDER_EMAIL, APP_PASSWORD)
+        
+        # We send as BCC to protect student privacy!
+        server.sendmail(SENDER_EMAIL, emails, msg.as_string())
+        server.quit()
+        return True, f"Emailed {len(emails)} students."
+    except Exception as e:
+        return False, f"Email error: {str(e)}"
+
 # ================= DEADLINE HELPER FUNCTIONS =================
 
 def get_deadline_status(deadline_str):
@@ -1120,6 +1167,19 @@ if role == "lecturer":
                     )
                     
                     if success:
+                        with st.spinner("Broadcasting emails to students..."):
+                            # Format the email content
+                            email_subject = f"📢 The N-Streamlines: {ann_title}"
+                            email_body = f"Hello,\n\nA new announcement has been posted by Er. Nirajan Katuwal:\n\nTitle: {ann_title}\nPriority: {ann_priority}\n\nMessage:\n{ann_message}\n\nPlease log into the platform to view the details."
+
+                            # Fire the email engine
+                            e_success, e_msg = send_email_notification(sem_id, email_subject, email_body)
+                        if e_success:
+                            st.success(f"✅ {msg} & {e_msg}")
+                        else:
+                            st.warning(f"✅ {msg}, but emails were skipped: {e_msg}")
+                        st.rerun()
+                            
                         st.success("✅ {}".format(msg))
                         st.rerun()
                     else:
