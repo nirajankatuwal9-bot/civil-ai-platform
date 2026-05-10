@@ -1,4 +1,4 @@
-pip install streamlit pandas sqlite3 openai
+
 import streamlit as st
 import pandas as pd
 import sqlite3
