@@ -261,7 +261,7 @@ conn.commit()
 # ================= PASSWORD HELPERS =================
 
 def hash_password(p):
-    return bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
 
 def check_password(p, hashed):
     try:
