@@ -1969,8 +1969,30 @@ if role == "lecturer":
         # ANALYTICS
     with tabs[5]:  # Adjust index if needed
         
-        st.title("📈 Performance Analytics")
-        
+        st.title(" Performance Analytics")
+        st.subheader("📈 Class Performance Trend")
+        #Fetch average marks per assignment ordered chronologically by deadline
+        trend_data = pd.read_sql_query("""
+        SELECT
+            assignments.title as Assignment,
+            AVG(CAST(submissions.marks AS FLOAT)) as Average_Marks
+        FROM submissions
+        JOIN assignments ON submissions.assignment_id = assignments.id
+        WHERE submissions.marks IS NOT NULL AND submissions.marks != ''
+        GROUP BY assignments.id
+        ORDER BY assignments.deadline ASC
+        """, conn)
+
+        if not trend_data.empty:
+            # Set the assignment title as the index so it becomes the X-axis label
+            trend_data.set_index('Assignment', inplace=True)
+
+            # Draw a smooth area chart
+            st.area_chart(trend_data['Average_Marks'])
+        else:
+            st.info("Not enough graded submissions to generate a trend chart yet.")
+        st.divider() 
+
         st.subheader("📊 Grade Statistics")
         
         sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
@@ -2971,6 +2993,25 @@ if role == "lecturer":
                             profile['info']['username'],
                             profile['info']['semester']
                         ), unsafe_allow_html=True)
+                        st.divider()
+                        st.subheader("📊 Personal Growth & Performance")
+                        
+                        submissions_df = profile_data['submissions']
+
+                        # Filter only the assignments that have actually been graded by the AI
+                        graded_df = submissions_df[submissions_df['marks'].notna() & (submissions_df['marks'] != '')].copy()
+
+                        if not graded_df.empty:
+                            # Safely convert marks to numbers
+                            graded_df['Marks'] = pd.to_numeric(graded_df['marks'], errors='coerce')
+                            # Sort by deadline to show chronological growth over the semester
+                            graded_df = graded_df.sort_values(by='deadline')
+                            # Create a clean chart data table
+                            chart_data = graded_df[['assignment', 'Marks']].set_index('assignment')
+                            # Display a line chart showing their progress
+                            st.line_chart(chart_data)
+                        else:
+                            st.info("Waiting for more graded assignments to generate a growth chart.")
                         
                         st.write("")
                         
