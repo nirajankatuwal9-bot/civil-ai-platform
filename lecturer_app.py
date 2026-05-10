@@ -1899,7 +1899,7 @@ if role == "lecturer":
                             
                         with col_a:
                             if st.button("AI Grade", key="grade_{}".format(row['id'])):
-                                if not rubric.strip():
+                                if not row['rubric'] or not str(row['rubric']).strip():
                                     st.warning("Please enter a rubric/model answer first")
                                 else:
                                     with st.spinner("AI is grading..."):
