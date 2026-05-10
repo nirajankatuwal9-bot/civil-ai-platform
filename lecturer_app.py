@@ -278,7 +278,7 @@ admin_exists = pd.read_sql_query(
 )
 
 if admin_exists.empty:
-    c.execute("""
+    c.execute("""
     INSERT INTO users(full_name, username, password, role, semester_id)
     VALUES(?,?,?,?,?)
     """, (
