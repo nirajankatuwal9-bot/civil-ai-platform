@@ -210,9 +210,17 @@ CREATE TABLE IF NOT EXISTS assignments(
     title TEXT,
     subject_id INTEGER,
     deadline TEXT,
-    question_file TEXT
+    question_file TEXT,
+    rubric TEXT
 )
 """)
+
+# Safe auto-migration for existing databases
+try:
+    c.execute("ALTER TABLE assignments ADD COLUMN rubric TEXT")
+    conn.commit()
+except:
+    pass # Column already exists
 
 # SUBMISSIONS
 c.execute("""
