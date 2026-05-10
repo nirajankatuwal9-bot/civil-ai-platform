@@ -983,17 +983,17 @@ def search_assignments(query):
     return results
 # ================= EDIT ASSIGNMENT =================
 
-def update_assignment(assignment_id, new_title, new_deadline):
+def update_assignment(assignment_id, new_title, new_deadline,new_rubric):
     """
-    Update assignment title and deadline
+    Update assignment title, deadline, and rubric
     Returns: (success, message)
     """
     try:
         c.execute("""
         UPDATE assignments 
-        SET title=?, deadline=?
+        SET title=?, deadline=?,rubric=?
         WHERE id=?
-        """, (new_title.strip(), str(new_deadline), int(assignment_id)))
+        """, (new_title.strip(), str(new_deadline), new_rubric.strip(), int(assignment_id)))
         
         conn.commit()
         return True, "Assignment updated successfully"
@@ -1566,7 +1566,8 @@ if role == "lecturer":
             
             with col2:
                 title = st.text_input("Assignment Title", placeholder="e.g., Design of RCC Beam")
-                deadline = st.date_input("Deadline")
+                deadline = st.date_input("Deadline"):
+                rubric_text = st.text_area("🎯 Marking Rubric / Model Answer", placeholder="Key steps, formulas, or point breakdowns...")
                 
                 file = st.file_uploader("📎 Upload Assignment Question PDF (Optional)", type=["pdf"])
 
@@ -1600,9 +1601,9 @@ if role == "lecturer":
 
                     try:
                         c.execute("""
-                        INSERT INTO assignments(title,subject_id,deadline,question_file)
-                        VALUES(?,?,?,?)
-                        """, (title.strip(), int(sub_id), str(deadline), file_path))
+                        INSERT INTO assignments(title,subject_id,deadline,question_file,rubric)
+                        VALUES(?,?,?,?,?)
+                        """, (title.strip(), int(sub_id), str(deadline), file_path, rubric_text.strip()))
 
                         conn.commit()
                         st.success("✅ Assignment '{}' created successfully!".format(title.strip()))
@@ -1811,6 +1812,7 @@ if role == "lecturer":
                     semesters.name as semester,
                     subjects.name as subject,
                     assignments.title as assignment,
+                    assignments.rubric,
                     submissions.submission_time,
                     submissions.submission_file,
                     submissions.marks,
@@ -1859,7 +1861,7 @@ if role == "lecturer":
             st.divider()
             st.subheader("AI Grading Tool")
 
-            rubric = st.text_area("Enter Model Answer / Rubric for AI Grading (applies to all below)", height=150)
+            
             
             for _, row in df.iterrows():
                 expander_title = "{} - {} ({})".format(row['username'], row['assignment'], row['subject'])
@@ -1902,7 +1904,7 @@ if role == "lecturer":
                                 else:
                                     with st.spinner("AI is grading..."):
                                         try:
-                                            result = vision_grade(row["submission_file"], rubric)
+                                            result = vision_grade(row["submission_file"], row["rubric"])
                                             with st.expander("**AI Response:**", expanded= True):
                                                 st.write(result)
 
