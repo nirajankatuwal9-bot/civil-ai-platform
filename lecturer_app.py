@@ -122,27 +122,27 @@ os.makedirs("study_materials", exist_ok=True)
 # ================= ANNOUNCEMENTS =================
 
 def create_announcement(title, message, semester_id, priority, user_id):
-    """
-    Create a new announcement
-    Returns: (success, message)
-    """
-    try:
-        c.execute("""
-        INSERT INTO announcements(title, message, semester_id, created_by, created_at, priority)
-        VALUES(?,?,?,?,?,?)
-        """, (
-            title.strip(),
-            message.strip(),
-            int(semester_id) if semester_id else None,
-            int(user_id),
-            str(datetime.now()),
-            priority
-        ))
-        
-        conn.commit()
-        return True, "Announcement created successfully"
-    except Exception as e:
-        return False, "Error: {}".format(str(e))
+    """
+    Create a new announcement
+    Returns: (success, message)
+    """
+    try:
+        c.execute("""
+        INSERT INTO announcements(title, message, semester_id, created_by, created_at, priority)
+        VALUES(?,?,?,?,?,?)
+        """, (
+            title.strip(),
+            message.strip(),
+            int(semester_id) if semester_id else None,
+            int(user_id),
+            str(datetime.now()),
+            priority
+        ))
+        
+        conn.commit()
+        return True, "Announcement created successfully"
+    except Exception as e:
+        return False, "Error: {}".format(str(e))
 
 
 def get_announcements_for_semester(semester_id=None):
