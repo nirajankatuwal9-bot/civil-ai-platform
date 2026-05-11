@@ -144,7 +144,20 @@ except Exception as e:
     conn.rollback()
     st.error(f"🚨 Database Connection Failed: {e}")
     st.stop()
+# ================= SAFE DATABASE EXECUTION =================
+def ensure_connection():
+    # ... (Keep your ensure_connection code here)
 
+def db_execute(query, params=None):
+    # ... (Keep your db_execute code here)
+
+def db_query(query, params=None):
+    ensure_connection() 
+    try:
+        return pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        if conn: conn.rollback()
+        return pd.DataFrame()
 # USERS
 try:
     success,erro = db_execute("""
