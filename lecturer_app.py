@@ -158,7 +158,7 @@ def db_execute(query, params=None):
 
 def db_query(query, params=None):
     try:
-        return pd. read _swl_query(query, conn, params=params)
+        return pd. read_sQl_query(query, conn, params=params)
     except Exception as e:
         conn.rollback()
         return pd.DataFrame()
