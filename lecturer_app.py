@@ -140,6 +140,7 @@ try:
     c = conn.cursor()
     
 except Exception as e:
+    conn.rollback()
     st.error(f"🚨 Database Connection Failed: {e}")
     st.stop()
 # USERS
@@ -383,6 +384,33 @@ if not st.session_state.logged_in:
 
         st.stop()
 
+# ================= SAFE DATABASE EXECUTION =================
+
+def db_execute(query, params=None):
+    """
+    Safe execution for INSERT, UPDATE, DELETE
+    Automatically commits or rollbacks.
+    """
+    try:
+        c.execute(query, params)
+        conn.commit()
+        return True, None
+    except Exception as e:
+        conn.rollback()
+        return False, str(e)
+
+
+def db_query(query, params=None):
+    """
+    Safe execution for SELECT queries.
+    Returns pandas DataFrame.
+    """
+    try:
+        return pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        conn.rollback()
+        st.error(f"Database Error: {e}")
+        return pd.DataFrame()
 # ================= SYSTEM & SIDEBAR =================
 
 #check session timeout
