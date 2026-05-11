@@ -347,28 +347,39 @@ if not st.session_state.logged_in:
             </p>
         </div>
         """, unsafe_allow_html=True)
-    #-------------------------------------------
+
     with st.container(border=True):
         user = st.text_input("Username")
         pw = st.text_input("Password", type="password")
 
         if st.button("Enter the Flow"):
 
-            res = pd.read_sql_query(
-                "SELECT * FROM users WHERE username=%s",
-                conn,
-                params=(user,)
-            )
+            try:
+                # 🔥 IMPORTANT FOR POSTGRESQL
+                conn.rollback()   # Clears any failed transaction state
+            except:
+                pass
 
-            if not res.empty and check_password(pw, res.iloc[0]["password"]):
-                st.session_state.logged_in = True
-                st.session_state.user_id = res.iloc[0]["id"]
-                st.session_state.role = res.iloc[0]["role"]
-                st.session_state.username = res.iloc[0]["username"]
-                st.session_state.semester_id = res.iloc[0]["semester_id"]
-                st.rerun()
-            else:
-                st.error("Invalid credentials")
+            try:
+                res = pd.read_sql_query(
+                    "SELECT * FROM users WHERE username=%s",
+                    conn,
+                    params=(user,)
+                )
+
+                if not res.empty and check_password(pw, res.iloc[0]["password"]):
+                    st.session_state.logged_in = True
+                    st.session_state.user_id = res.iloc[0]["id"]
+                    st.session_state.role = res.iloc[0]["role"]
+                    st.session_state.username = res.iloc[0]["username"]
+                    st.session_state.semester_id = res.iloc[0]["semester_id"]
+                    st.rerun()
+                else:
+                    st.error("Invalid credentials")
+
+            except Exception as e:
+                conn.rollback()
+                st.error(f"Login error: {e}")
 
         st.stop()
 
