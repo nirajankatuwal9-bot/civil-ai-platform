@@ -1043,10 +1043,13 @@ if role == "lecturer":
                 ann_title = st.text_input("Announcement Title", key="ann_title")
                 ann_message = st.text_area("Message", key="ann_message", height=100)
             with col_ann2:
-                sems_ann = db_query("SELECT * FROM semesters", conn)
-                ann_sem_options = ["All Semesters"] + sems_ann["name"].tolist()
-                ann_sem = st.selectbox("Target Audience", ann_sem_options, key="ann_sem")
-                ann_priority = st.selectbox("Priority", ["Normal", "Important", "Urgent"], key="ann_priority")
+                sems_ann = pd.read_sql_query("SELECT * FROM semesters", conn)
+                if "name" in sems_ann.columns:
+                    ann_sem_options = ["All Semesters"] + sems_ann["name"].tolist()
+                else:
+                    ann_sem_options = ["All Semesters"]
+                    ann_sem = st.selectbox("Target Audience", ann_sem_options, key="ann_sem")
+                
             
             if st.button("📢 Post Announcement", type="primary"):
                 if not ann_title.strip() or not ann_message.strip():
