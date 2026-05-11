@@ -143,100 +143,127 @@ except Exception as e:
     st.error(f"🚨 Database Connection Failed: {e}")
     st.stop()
 # USERS
-c.execute("""
-CREATE TABLE IF NOT EXISTS users(
-    id SERIAL PRIMARY KEY,
-    full_name TEXT,
-    username TEXT UNIQUE,
-    password TEXT,
-    role TEXT,
-    semester_id INTEGER
-)
-""")
+try:
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS users(
+        id SERIAL PRIMARY KEY,
+        full_name TEXT,
+        username TEXT UNIQUE,
+        password TEXT,
+        role TEXT,
+        semester_id INTEGER
+    )
+    """)
+    conn.commit()
+except:
+    conn.rollback()
+
 # Safe auto-migration for existing users table
 try:
     c.execute("ALTER TABLE users ADD COLUMN email TEXT")
     conn.commit()
 except:
     conn.rollback()
-    pass # Column already exists
 
 # SEMESTERS
-c.execute("""
-CREATE TABLE IF NOT EXISTS semesters(
-    id SERIAL PRIMARY KEY,
-    name TEXT UNIQUE
-)
-""")
+try:
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS semesters(
+        id SERIAL PRIMARY KEY,
+        name TEXT UNIQUE
+    )
+    """)
+    conn.commit()
+except:
+    conn.rollback()
 
 # SUBJECTS
-c.execute("""
-CREATE TABLE IF NOT EXISTS subjects(
-    id SERIAL PRIMARY KEY,
-    name TEXT,
-    semester_id INTEGER
-)
-""")
+try:
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS subjects(
+        id SERIAL PRIMARY KEY,
+        name TEXT,
+        semester_id INTEGER
+    )
+    """)
+    conn.commit()
+except:
+    conn.rollback()
 
 # ASSIGNMENTS
-c.execute("""
-CREATE TABLE IF NOT EXISTS assignments(
-    id SERIAL PRIMARY KEY,
-    title TEXT,
-    subject_id INTEGER,
-    deadline TEXT,
-    question_file TEXT,
-    rubric TEXT
-)
-""")
+try:
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS assignments(
+        id SERIAL PRIMARY KEY,
+        title TEXT,
+        subject_id INTEGER,
+        deadline TEXT,
+        question_file TEXT,
+        rubric TEXT
+    )
+    """)
+    conn.commit()
+except:
+    conn.rollback()
 
-# Safe auto-migration for existing databases
+# Safe auto-migration for rubric column
 try:
     c.execute("ALTER TABLE assignments ADD COLUMN rubric TEXT")
     conn.commit()
 except:
     conn.rollback()
-    pass # Column already exists
 
 # SUBMISSIONS
-c.execute("""
-CREATE TABLE IF NOT EXISTS submissions(
-    id SERIAL PRIMARY KEY,
-    assignment_id INTEGER,
-    student_id INTEGER,
-    submission_time TEXT,
-    submission_file TEXT,
-    marks TEXT,
-    ai_summary TEXT
-)
-""")
-# STUDY MATERIALS
-c.execute("""
-CREATE TABLE IF NOT EXISTS study_materials(
-    id SERIAL PRIMARY KEY,
-    title TEXT,
-    subject_id INTEGER,
-    semester_id INTEGER,
-    file_path TEXT,
-    description TEXT,
-    upload_date TEXT,
-    uploaded_by INTEGER
-)
-""")
-# ANNOUNCEMENTS
-c.execute("""
-CREATE TABLE IF NOT EXISTS announcements(
-    id SERIAL PRIMARY KEY,
-    title TEXT,
-    message TEXT,
-    semester_id INTEGER,
-    created_by INTEGER,
-    created_at TEXT,
-    priority TEXT
-)
-""")
+try:
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS submissions(
+        id SERIAL PRIMARY KEY,
+        assignment_id INTEGER,
+        student_id INTEGER,
+        submission_time TEXT,
+        submission_file TEXT,
+        marks TEXT,
+        ai_summary TEXT
+    )
+    """)
+    conn.commit()
+except:
+    conn.rollback()
 
-conn.commit()
+# STUDY MATERIALS
+try:
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS study_materials(
+        id SERIAL PRIMARY KEY,
+        title TEXT,
+        subject_id INTEGER,
+        semester_id INTEGER,
+        file_path TEXT,
+        description TEXT,
+        upload_date TEXT,
+        uploaded_by INTEGER
+    )
+    """)
+    conn.commit()
+except:
+    conn.rollback()
+
+# ANNOUNCEMENTS
+try:
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS announcements(
+        id SERIAL PRIMARY KEY,
+        title TEXT,
+        message TEXT,
+        semester_id INTEGER,
+        created_by INTEGER,
+        created_at TEXT,
+        priority TEXT
+    )
+    """)
+    conn.commit()
+except:
+    conn.rollback()
 
 # ================= PASSWORD HELPERS =================
 
