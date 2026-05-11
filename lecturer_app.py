@@ -125,29 +125,22 @@ os.makedirs("submission_files", exist_ok=True)
 os.makedirs("study_materials", exist_ok=True)
 
 # ================= DATABASE =================
-try:
-    # Safely fetch credentials from Streamlit Secrets or Environment Variables
-    DB_HOST = str(st.secrets.get("DB_HOST", os.getenv("DB_HOST", "localhost")))
-    DB_PORT = str(st.secrets.get("DB_PORT", os.getenv("DB_PORT", "5432")))
-    DB_NAME = str(st.secrets.get("DB_NAME", os.getenv("DB_NAME", "lecturer_db")))
-    DB_USER = str(st.secrets.get("DB_USER", os.getenv("DB_USER", "postgres")))
-    DB_PASS = str(st.secrets.get("DB_PASS", os.getenv("DB_PASS", "postgres")))
 
-    # CRITICAL: The left side MUST be host, port, dbname, user, password
-    conn = psycopg2.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASS,
-        sslmode="require"
-    )
+try:
+    # Fetch the connection string from Streamlit Secrets
+    DATABASE_URL = st.secrets.get("DATABASE_URL", os.getenv("DATABASE_URL"))
+    
+    if not DATABASE_URL:
+        st.error("🚨 DATABASE_URL not found in Streamlit Secrets!")
+        st.stop()
+
+    # Connect using the URL
+    conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = False
     c = conn.cursor()
     
 except Exception as e:
     st.error(f"🚨 Database Connection Failed: {e}")
-    st.info(f"Debug - Attempting Host: {DB_HOST}")
     st.stop()
 # USERS
 c.execute("""
