@@ -374,7 +374,7 @@ if not st.session_state.logged_in:
         pw = st.text_input("Password", type="password")
 
         if st.button("Enter the Flow"):
-            with st.spinner("Authenticating...")
+            with st.spinner("Authenticating..."):
 
             try:
                 # 🔥 IMPORTANT FOR POSTGRESQL
