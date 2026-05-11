@@ -359,7 +359,7 @@ def require_login():
 # ================= LOGIN =================
 
 if not st.session_state.logged_in:
-
+    # Title and Branding
     st.markdown("""
         <div style='text-align: center; padding-bottom: 20px;'>
             <h1 style='color: #004b87; font-size: 3em; margin-bottom: 0px;'>🌊 THE N-STREAMLINES</h1>
@@ -369,32 +369,50 @@ if not st.session_state.logged_in:
         </div>
         """, unsafe_allow_html=True)
 
+    # Login Form Container
     with st.container(border=True):
         user = st.text_input("Username")
         pw = st.text_input("Password", type="password")
 
         if st.button("Enter the Flow"):
             with st.spinner("Authenticating..."):
-
                 try:
-                # 🔥 IMPORTANT FOR POSTGRESQL
-                    conn.rollback()   # Clears any failed transaction state
+                    # 🔥 IMPORTANT FOR POSTGRESQL: 
+                    # Reset any failed transactions before starting a new query
+                    conn.rollback()   
+
+                    # Use the corrected db_query function (ensure it uses pd.read_sql_query)
                     res = db_query("SELECT * FROM users WHERE username=%s", (user,))
-                    if not res.empty and check_password(pw, res.iloc[0]["password"]):
-                        st.session_state.logged_in = True
-                        st.session_state.user_id = res.iloc[0]["id"]
-                        st.session_state.role = res.iloc[0]["role"]
-                        st.session_state.username = res.iloc[0]["username"]
-                        st.session_state.semester_id = res.iloc[0]["semester_id"]
-                        st.rerun()
+
+                    if not res.empty:
+                        # Fetch the first row from the DataFrame
+                        user_data = res.iloc[0]
+                        stored_password = user_data["password"]
+
+                        if check_password(pw, stored_password):
+                            # Set Session States
+                            st.session_state.logged_in = True
+                            st.session_state.user_id = int(user_data["id"])
+                            st.session_state.role = user_data["role"]
+                            st.session_state.username = user_data["username"]
+                            st.session_state.semester_id = user_data["semester_id"]
+                            
+                            # Update activity for session timeout logic
+                            st.session_state.last_activity = time.time()
+                            
+                            st.rerun()
+                        else:
+                            st.error("🚫 Invalid credentials")
                     else:
-                        st.error("Invalid credentials")
+                        st.error("🚫 User not found")
 
-            except Exception as e:
-                conn.rollback()
-                st.error(f"Login error: {e}")
+                except Exception as e:
+                    # Fail-safe rollback if query fails
+                    conn.rollback()
+                    st.error(f"🚨 Login error: {e}")
 
-        st.stop()
+    # Prevent the rest of the app from running if not logged in
+    st.stop()
 
 # ================= SAFE DATABASE EXECUTION =================
 
