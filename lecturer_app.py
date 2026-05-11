@@ -141,11 +141,11 @@ DB_PASS = get_db_credential("DB_PASS", "postgres")
 # Attempt Connection with SSL
 try:
     conn = psycopg2.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASS,
+        DB_HOST = "your-actual-host-url.com,
+        DB_PORT = "5432",
+        DB_NAME = "your_db_name",
+        DB_USER = "your_user",
+        DB_PASS = "your_password,
         sslmode="require"  # <--- CRITICAL FOR CLOUD DATABASES
     )
     conn.autocommit = False
