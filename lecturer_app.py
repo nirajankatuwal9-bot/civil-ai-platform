@@ -144,19 +144,64 @@ except Exception as e:
     conn.rollback()
     st.error(f"🚨 Database Connection Failed: {e}")
     st.stop()
+# ================= DATABASE CONNECTION =================
+
+try:
+    # Fetch the connection string from Streamlit Secrets
+    DATABASE_URL = st.secrets.get("DATABASE_URL")
+    
+    if not DATABASE_URL:
+        st.error("🚨 DATABASE_URL not found in Streamlit Secrets!")
+        st.stop()
+
+    # Connect to PostgreSQL
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    c = conn.cursor()
+    
+except Exception as e:
+    st.error(f"🚨 Database Connection Failed: {e}")
+    st.stop()
+
 # ================= SAFE DATABASE EXECUTION =================
+
 def ensure_connection():
-    # ... (Keep your ensure_connection code here)
+    """Ensure the database connection and cursor are still alive."""
+    global conn, c
+    try:
+        # Dummy execution to test the pulse of the connection
+        c.execute("SELECT 1")
+    except:
+        try:
+            # Re-establish connection if it died
+            DATABASE_URL = st.secrets.get("DATABASE_URL")
+            conn = psycopg2.connect(DATABASE_URL)
+            conn.autocommit = False
+            c = conn.cursor()
+        except Exception as e:
+            st.error(f"Failed to reconnect to database: {e}")
 
 def db_execute(query, params=None):
-    # ... (Keep your db_execute code here)
+    """Safe execution for INSERT, UPDATE, DELETE."""
+    ensure_connection()
+    try:
+        c.execute(query, params)
+        conn.commit()
+        return True, None
+    except Exception as e:
+        conn.rollback()
+        return False, str(e)
 
 def db_query(query, params=None):
-    ensure_connection() 
+    """Safe execution for SELECT queries using pandas."""
+    ensure_connection()
     try:
+        # Use pandas to read the SQL directly; pass 'conn', not 'c'
         return pd.read_sql_query(query, conn, params=params)
     except Exception as e:
-        if conn: conn.rollback()
+        if conn:
+            conn.rollback()
+        st.error(f"Database Query Error: {e}") 
         return pd.DataFrame()
 # USERS
 try:
