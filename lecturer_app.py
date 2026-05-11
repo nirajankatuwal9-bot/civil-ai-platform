@@ -145,7 +145,7 @@ try:
         DB_PORT = "5432",
         DB_NAME = "your_db_name",
         DB_USER = "your_user",
-        DB_PASS = "your_password,
+        DB_PASS = "your_password",
         sslmode="require"  # <--- CRITICAL FOR CLOUD DATABASES
     )
     conn.autocommit = False
