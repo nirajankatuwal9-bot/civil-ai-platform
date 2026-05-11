@@ -1,18 +1,4 @@
-Here is the complete, combined code updated for PostgreSQL. 
 
-### Key Changes Made (Strictly for PostgreSQL Compatibility):
-1. **Library Swapped:** `sqlite3` replaced with `psycopg2` and `subprocess` (for backups).
-2. **Connection Setup:** Updated to use PostgreSQL credentials (configurable via environment variables or hardcoded defaults).
-3. **SQL Syntax:** 
-   - All `?` placeholders replaced with `%s` (psycopg2 standard).
-   - `INTEGER PRIMARY KEY AUTOINCREMENT` replaced with `SERIAL PRIMARY KEY`.
-4. **Transaction Management:** Added `conn.rollback()` in `try/except` blocks where schema changes or duplicate inserts might fail (PostgreSQL requires a rollback after an error before continuing).
-5. **Backup/Restore System:** Replaced SQLite file copying with PostgreSQL's native `pg_dump` and `psql` command-line utilities via `subprocess`.
-6. **Minor Bug Fixes:** Fixed `return none` to `return None` and `SER ai_summary` to `SET ai_summary` so the Python/SQL engine doesn't crash.
-
-***
-
-```python
 import streamlit as st
 import pandas as pd
 import psycopg2
