@@ -125,22 +125,35 @@ os.makedirs("submission_files", exist_ok=True)
 os.makedirs("study_materials", exist_ok=True)
 
 # ================= DATABASE =================
-# UPDATE THESE CREDENTIALS TO MATCH YOUR POSTGRESQL SETUP
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", "5432")
-DB_NAME = os.getenv("DB_NAME", "lecturer_db")
-DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASS = os.getenv("DB_PASS", "postgres")
+# Streamlit Cloud Secrets Compatibility
+def get_db_credential(key, default):
+    try:
+        return st.secrets[key]
+    except:
+        return os.getenv(key, default)
 
-conn = psycopg2.connect(
-    host=DB_HOST,
-    port=DB_PORT,
-    dbname=DB_NAME,
-    user=DB_USER,
-    password=DB_PASS
-)
-conn.autocommit = False
-c = conn.cursor()
+DB_HOST = get_db_credential("DB_HOST", "localhost")
+DB_PORT = get_db_credential("DB_PORT", "5432")
+DB_NAME = get_db_credential("DB_NAME", "lecturer_db")
+DB_USER = get_db_credential("DB_USER", "postgres")
+DB_PASS = get_db_credential("DB_PASS", "postgres")
+
+# Attempt Connection with SSL
+try:
+    conn = psycopg2.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASS,
+        sslmode="require"  # <--- CRITICAL FOR CLOUD DATABASES
+    )
+    conn.autocommit = False
+    c = conn.cursor()
+except Exception as e:
+    st.error(f"🚨 Database Connection Failed: {e}")
+    st.info(f"Debug Info - Trying to connect to Host: {DB_HOST}")
+    st.stop()
 
 # USERS
 c.execute("""
