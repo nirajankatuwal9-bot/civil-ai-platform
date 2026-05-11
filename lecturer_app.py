@@ -126,6 +126,7 @@ os.makedirs("study_materials", exist_ok=True)
 
 # ================= DATABASE =================
 
+
 try:
     # Fetch the connection string from Streamlit Secrets
     DATABASE_URL = st.secrets.get("DATABASE_URL", os.getenv("DATABASE_URL"))
@@ -143,6 +144,33 @@ except Exception as e:
     conn.rollback()
     st.error(f"🚨 Database Connection Failed: {e}")
     st.stop()
+# ================= SAFE DATABASE EXECUTION =================
+
+def db_execute(query, params=None):
+    """
+    Safe execution for INSERT, UPDATE, DELETE
+    Automatically commits or rollbacks.
+    """
+    try:
+        success,erro = C.execute(query, params)
+        conn.commit()
+        return True, None
+    except Exception as e:
+        conn.rollback()
+        return False, str(e)
+
+
+def db_query(query, params=None):
+    """
+    Safe execution for SELECT queries.
+    Returns pandas DataFrame.
+    """
+    try:
+        return pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        conn.rollback()
+        st.error(f"Database Error: {e}")
+        return pd.DataFrame()
 # USERS
 try:
     success,erro = db_execute("""
@@ -281,7 +309,7 @@ def check_password(p, hashed):
 
 admin_exists = db_query(
     "SELECT * FROM users WHERE username='admin'",
-    conn
+    
 )
 
 if admin_exists.empty:
@@ -295,7 +323,7 @@ if admin_exists.empty:
         "lecturer",
         None
     ))
-    conn.commit()
+    
 
 # ================= SESSION =================
 
@@ -391,7 +419,7 @@ def db_execute(query, params=None):
     Automatically commits or rollbacks.
     """
     try:
-        success,erro = db_execute(query, params)
+        success,erro = C.execute(query, params)
         conn.commit()
         return True, None
     except Exception as e:
@@ -405,7 +433,7 @@ def db_query(query, params=None):
     Returns pandas DataFrame.
     """
     try:
-        return db_query(query, conn, params=params)
+        return pd.read_sql_query(query, conn, params=params)
     except Exception as e:
         conn.rollback()
         st.error(f"Database Error: {e}")
