@@ -374,10 +374,12 @@ if not st.session_state.logged_in:
         pw = st.text_input("Password", type="password")
 
         if st.button("Enter the Flow"):
+            with st.spinner("Authenticating...")
 
             try:
                 # 🔥 IMPORTANT FOR POSTGRESQL
                 conn.rollback()   # Clears any failed transaction state
+                
             except:
                 pass
 
