@@ -141,7 +141,7 @@ DB_PASS = get_db_credential("DB_PASS", "postgres")
 # Attempt Connection with SSL
 try:
     conn = psycopg2.connect(
-        DB_HOST = "your-actual-host-url.com,
+        DB_HOST = "your-actual-host-url.com",
         DB_PORT = "5432",
         DB_NAME = "your_db_name",
         DB_USER = "your_user",
