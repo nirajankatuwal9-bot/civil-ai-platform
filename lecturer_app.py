@@ -411,7 +411,7 @@ def db_execute(query, params=None):
     Automatically commits or rollbacks.
     """
     try:
-        success,erro = C.execute(query, params)
+        success,erro = c.execute(query, params)
         conn.commit()
         return True, None
     except Exception as e:
