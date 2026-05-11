@@ -125,36 +125,30 @@ os.makedirs("submission_files", exist_ok=True)
 os.makedirs("study_materials", exist_ok=True)
 
 # ================= DATABASE =================
-# Streamlit Cloud Secrets Compatibility
-def get_db_credential(key, default):
-    try:
-        return st.secrets[key]
-    except:
-        return os.getenv(key, default)
-
-DB_HOST = get_db_credential("DB_HOST", "localhost")
-DB_PORT = get_db_credential("DB_PORT", "5432")
-DB_NAME = get_db_credential("DB_NAME", "lecturer_db")
-DB_USER = get_db_credential("DB_USER", "postgres")
-DB_PASS = get_db_credential("DB_PASS", "postgres")
-
-# Attempt Connection with SSL
 try:
+    # Safely fetch credentials from Streamlit Secrets or Environment Variables
+    DB_HOST = str(st.secrets.get("DB_HOST", os.getenv("DB_HOST", "localhost")))
+    DB_PORT = str(st.secrets.get("DB_PORT", os.getenv("DB_PORT", "5432")))
+    DB_NAME = str(st.secrets.get("DB_NAME", os.getenv("DB_NAME", "lecturer_db")))
+    DB_USER = str(st.secrets.get("DB_USER", os.getenv("DB_USER", "postgres")))
+    DB_PASS = str(st.secrets.get("DB_PASS", os.getenv("DB_PASS", "postgres")))
+
+    # CRITICAL: The left side MUST be host, port, dbname, user, password
     conn = psycopg2.connect(
-        DB_HOST = "your-actual-host-url.com",
-        DB_PORT = "5432",
-        DB_NAME = "your_db_name",
-        DB_USER = "your_user",
-        DB_PASS = "your_password",
-        sslmode="require"  # <--- CRITICAL FOR CLOUD DATABASES
+        host=DB_HOST,
+        port=DB_PORT,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASS,
+        sslmode="require"
     )
     conn.autocommit = False
     c = conn.cursor()
+    
 except Exception as e:
     st.error(f"🚨 Database Connection Failed: {e}")
-    st.info(f"Debug Info - Trying to connect to Host: {DB_HOST}")
+    st.info(f"Debug - Attempting Host: {DB_HOST}")
     st.stop()
-
 # USERS
 c.execute("""
 CREATE TABLE IF NOT EXISTS users(
