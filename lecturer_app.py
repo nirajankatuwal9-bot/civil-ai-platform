@@ -146,7 +146,24 @@ except Exception as e:
     st.stop()
 # ================= SAFE DATABASE EXECUTION =================
 
+def ensure_connection():
+    """Ensure the database connection and cursor are still alive."""
+    global conn, c
+    try:
+        # Try a dummy execution to see if the connection is alive
+        c.execute("SELECT 1")
+    except:
+        # If it fails, try to reconnect using the URL in secrets
+        try:
+            DATABASE_URL = st.secrets.get("DATABASE_URL")
+            conn = psycopg2.connect(DATABASE_URL)
+            conn.autocommit = False
+            c = conn.cursor()
+        except Exception as e:
+            st.error(f"Failed to reconnect to database: {e}")
+
 def db_execute(query, params=None):
+    ensure_connection() # Make sure we aren't using a dead cursor
     try:
         c.execute(query, params)
         conn.commit()
@@ -155,13 +172,17 @@ def db_execute(query, params=None):
         conn.rollback()
         return False, str(e)
 
-
 def db_query(query, params=None):
+    ensure_connection() # Make sure we aren't using a dead cursor
     try:
-        return pd. read_sql_query(query, conn, params=params)
+        # Use pandas to read the SQL directly
+        # Note: We pass 'conn' here, not 'c'
+        return pd.read_sql_query(query, conn, params=params)
     except Exception as e:
-        conn.rollback()
-        st.error(f"Database Error: {e}")
+        if conn:
+            conn.rollback()
+        # Log the error but don't stop the whole app
+        print(f"Query Error: {e}") 
         return pd.DataFrame()
 # USERS
 try:
