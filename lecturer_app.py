@@ -379,23 +379,14 @@ if not st.session_state.logged_in:
                 try:
                 # 🔥 IMPORTANT FOR POSTGRESQL
                     conn.rollback()   # Clears any failed transaction state
-                
-            except:
-                pass
-
-            try:
-                res = db_query(
-                    "SELECT * FROM users WHERE username=%s",
-                    (user,)
-                )
-
-                if not res.empty and check_password(pw, res.iloc[0]["password"]):
-                    st.session_state.logged_in = True
-                    st.session_state.user_id = res.iloc[0]["id"]
-                    st.session_state.role = res.iloc[0]["role"]
-                    st.session_state.username = res.iloc[0]["username"]
-                    st.session_state.semester_id = res.iloc[0]["semester_id"]
-                    st.rerun()
+                    res = db_query("SELECT * FROM users WHERE username=%s", (user,))
+                    if not res.empty and check_password(pw, res.iloc[0]["password"]):
+                        st.session_state.logged_in = True
+                        st.session_state.user_id = res.iloc[0]["id"]
+                        st.session_state.role = res.iloc[0]["role"]
+                        st.session_state.username = res.iloc[0]["username"]
+                        st.session_state.semester_id = res.iloc[0]["semester_id"]
+                        st.rerun()
                 else:
                     st.error("Invalid credentials")
 
