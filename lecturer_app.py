@@ -145,7 +145,7 @@ except Exception as e:
     st.stop()
 # USERS
 try:
-    c.execute("""
+    success,erro = db_execute("""
     CREATE TABLE IF NOT EXISTS users(
         id SERIAL PRIMARY KEY,
         full_name TEXT,
@@ -155,45 +155,45 @@ try:
         semester_id INTEGER
     )
     """)
-    conn.commit()
+    
 except:
     conn.rollback()
 
 # Safe auto-migration for existing users table
 try:
-    c.execute("ALTER TABLE users ADD COLUMN email TEXT")
+    success,erro = db_execute("ALTER TABLE users ADD COLUMN email TEXT")
     conn.commit()
 except:
     conn.rollback()
 
 # SEMESTERS
 try:
-    c.execute("""
+    success,erro = db_execute("""
     CREATE TABLE IF NOT EXISTS semesters(
         id SERIAL PRIMARY KEY,
         name TEXT UNIQUE
     )
     """)
-    conn.commit()
+    
 except:
     conn.rollback()
 
 # SUBJECTS
 try:
-    c.execute("""
+    success,erro = db_execute("""
     CREATE TABLE IF NOT EXISTS subjects(
         id SERIAL PRIMARY KEY,
         name TEXT,
         semester_id INTEGER
     )
     """)
-    conn.commit()
+    
 except:
     conn.rollback()
 
 # ASSIGNMENTS
 try:
-    c.execute("""
+    success,erro = db_execute("""
     CREATE TABLE IF NOT EXISTS assignments(
         id SERIAL PRIMARY KEY,
         title TEXT,
@@ -203,20 +203,20 @@ try:
         rubric TEXT
     )
     """)
-    conn.commit()
+    
 except:
     conn.rollback()
 
 # Safe auto-migration for rubric column
 try:
-    c.execute("ALTER TABLE assignments ADD COLUMN rubric TEXT")
+    success,erro = db_execute("ALTER TABLE assignments ADD COLUMN rubric TEXT")
     conn.commit()
 except:
     conn.rollback()
 
 # SUBMISSIONS
 try:
-    c.execute("""
+    success,erro = db_execute("""
     CREATE TABLE IF NOT EXISTS submissions(
         id SERIAL PRIMARY KEY,
         assignment_id INTEGER,
@@ -227,13 +227,13 @@ try:
         ai_summary TEXT
     )
     """)
-    conn.commit()
+    
 except:
     conn.rollback()
 
 # STUDY MATERIALS
 try:
-    c.execute("""
+    success,erro = db_execute("""
     CREATE TABLE IF NOT EXISTS study_materials(
         id SERIAL PRIMARY KEY,
         title TEXT,
@@ -245,13 +245,13 @@ try:
         uploaded_by INTEGER
     )
     """)
-    conn.commit()
+    
 except:
     conn.rollback()
 
 # ANNOUNCEMENTS
 try:
-    c.execute("""
+    success,erro = db_execute("""
     CREATE TABLE IF NOT EXISTS announcements(
         id SERIAL PRIMARY KEY,
         title TEXT,
@@ -262,7 +262,7 @@ try:
         priority TEXT
     )
     """)
-    conn.commit()
+    
 except:
     conn.rollback()
 
@@ -279,13 +279,13 @@ def check_password(p, hashed):
 
 # ================= DEFAULT LECTURER =================
 
-admin_exists = pd.read_sql_query(
+admin_exists = db_query(
     "SELECT * FROM users WHERE username='admin'",
     conn
 )
 
 if admin_exists.empty:
-    c.execute("""
+    success,erro = db_execute("""
     INSERT INTO users(full_name, username, password, role, semester_id)
     VALUES(%s,%s,%s,%s,%s)
     """, (
@@ -362,10 +362,9 @@ if not st.session_state.logged_in:
                 pass
 
             try:
-                res = pd.read_sql_query(
+                res = db_query(
                     "SELECT * FROM users WHERE username=%s",
-                    conn,
-                    params=(user,)
+                    (user,)
                 )
 
                 if not res.empty and check_password(pw, res.iloc[0]["password"]):
@@ -392,7 +391,7 @@ def db_execute(query, params=None):
     Automatically commits or rollbacks.
     """
     try:
-        c.execute(query, params)
+        success,erro = db_execute(query, params)
         conn.commit()
         return True, None
     except Exception as e:
@@ -406,7 +405,7 @@ def db_query(query, params=None):
     Returns pandas DataFrame.
     """
     try:
-        return pd.read_sql_query(query, conn, params=params)
+        return db_query(query, conn, params=params)
     except Exception as e:
         conn.rollback()
         st.error(f"Database Error: {e}")
@@ -431,7 +430,7 @@ with st.sidebar:
             if st.button("🧨 Wipe Database", use_container_width=True):
                 tables = ["users", "submissions", "assignments", "subjects", "semesters", "study_materials", "announcements"]
                 for t in tables: 
-                    c.execute(f"DROP TABLE IF EXISTS {t} CASCADE")
+                    success,erro = db_execute(f"DROP TABLE IF EXISTS {t} CASCADE")
                 conn.commit()
                 st.rerun()
 
@@ -462,7 +461,7 @@ role = st.session_state.role
 
 def create_announcement(title, message, semester_id, priority, user_id):
     try:
-        c.execute("""
+        success,erro = db_execute("""
         INSERT INTO announcements(title, message, semester_id, created_by, created_at, priority)
         VALUES(%s,%s,%s,%s,%s,%s)
         """, (
@@ -483,7 +482,7 @@ def create_announcement(title, message, semester_id, priority, user_id):
 
 def get_announcements_for_semester(semester_id=None):
     if semester_id:
-        df = pd.read_sql_query("""
+        df = db_query("""
         SELECT announcements.*, users.full_name as author, semesters.name as semester
         FROM announcements
         LEFT JOIN users ON announcements.created_by = users.id
@@ -492,7 +491,7 @@ def get_announcements_for_semester(semester_id=None):
         ORDER BY announcements.created_at DESC
         """, conn, params=(int(semester_id),))
     else:
-        df = pd.read_sql_query("""
+        df = db_query("""
         SELECT announcements.*, users.full_name as author, semesters.name as semester
         FROM announcements
         LEFT JOIN users ON announcements.created_by = users.id
@@ -604,9 +603,9 @@ def apply_watermark(file_path, watermark_text="🌊 The N-Streamlines | Er. Nira
 #===================PUSH Email===============================
 def send_email_notification(target_semester_id, subject, message_body):
     if target_semester_id:
-        df = pd.read_sql_query("SELECT email FROM users WHERE role='student' AND semester_id=%s AND email IS NOT NULL AND email != ''", conn, params=(int(target_semester_id),))
+        df = db_query("SELECT email FROM users WHERE role='student' AND semester_id=%s AND email IS NOT NULL AND email != ''", conn, params=(int(target_semester_id),))
     else:
-        df = pd.read_sql_query("SELECT email FROM users WHERE role='student' AND email IS NOT NULL AND email != ''", conn)
+        df = db_query("SELECT email FROM users WHERE role='student' AND email IS NOT NULL AND email != ''", conn)
     
     emails = df['email'].tolist()
     if not emails:
@@ -674,17 +673,17 @@ def cleanup_orphaned_files():
     space_freed = 0
     db_files = set()
     
-    assignments = pd.read_sql_query("SELECT question_file FROM assignments WHERE question_file IS NOT NULL AND question_file != ''", conn)
+    assignments = db_query("SELECT question_file FROM assignments WHERE question_file IS NOT NULL AND question_file != ''", conn)
     for _, row in assignments.iterrows():
         if row['question_file']:
             db_files.add(row['question_file'])
     
-    submissions = pd.read_sql_query("SELECT submission_file FROM submissions WHERE submission_file IS NOT NULL AND submission_file != ''", conn)
+    submissions = db_query("SELECT submission_file FROM submissions WHERE submission_file IS NOT NULL AND submission_file != ''", conn)
     for _, row in submissions.iterrows():
         if row['submission_file']:
             db_files.add(row['submission_file'])
     
-    materials = pd.read_sql_query("SELECT file_path FROM study_materials WHERE file_path IS NOT NULL AND file_path != ''", conn)
+    materials = db_query("SELECT file_path FROM study_materials WHERE file_path IS NOT NULL AND file_path != ''", conn)
     for _, row in materials.iterrows():
         if row['file_path']:
             db_files.add(row['file_path'])
@@ -879,7 +878,7 @@ def search_students(query, semester_id=None):
         return pd.DataFrame()
     
     if semester_id:
-        results = pd.read_sql_query("""
+        results = db_query("""
         SELECT users.id, users.full_name, users.username, semesters.name as semester
         FROM users
         LEFT JOIN semesters ON users.semester_id = semesters.id
@@ -889,7 +888,7 @@ def search_students(query, semester_id=None):
         ORDER BY users.full_name ASC
         """, conn, params=(semester_id, '%{}%'.format(query), '%{}%'.format(query)))
     else:
-        results = pd.read_sql_query("""
+        results = db_query("""
         SELECT users.id, users.full_name, users.username, semesters.name as semester
         FROM users
         LEFT JOIN semesters ON users.semester_id = semesters.id
@@ -904,7 +903,7 @@ def search_assignments(query):
     if not query:
         return pd.DataFrame()
     
-    results = pd.read_sql_query("""
+    results = db_query("""
     SELECT 
         assignments.id,
         assignments.title,
@@ -921,7 +920,7 @@ def search_assignments(query):
 
 def update_assignment(assignment_id, new_title, new_deadline, new_rubric):
     try:
-        c.execute("""
+        success,erro = db_execute("""
         UPDATE assignments 
         SET title=%s, deadline=%s, rubric=%s
         WHERE id=%s
@@ -934,7 +933,7 @@ def update_assignment(assignment_id, new_title, new_deadline, new_rubric):
 
 def get_student_profile(student_id):
     try:
-        student_info = pd.read_sql_query("""
+        student_info = db_query("""
         SELECT users.*, semesters.name as semester
         FROM users
         LEFT JOIN semesters ON users.semester_id = semesters.id
@@ -944,7 +943,7 @@ def get_student_profile(student_id):
         if student_info.empty:
             return None
         
-        submissions = pd.read_sql_query("""
+        submissions = db_query("""
         SELECT 
             subjects.name as subject,
             assignments.title as assignment,
@@ -1016,7 +1015,7 @@ if role == "lecturer":
                 ann_title = st.text_input("Announcement Title", key="ann_title")
                 ann_message = st.text_area("Message", key="ann_message", height=100)
             with col_ann2:
-                sems_ann = pd.read_sql_query("SELECT * FROM semesters", conn)
+                sems_ann = db_query("SELECT * FROM semesters", conn)
                 ann_sem_options = ["All Semesters"] + sems_ann["name"].tolist()
                 ann_sem = st.selectbox("Target Audience", ann_sem_options, key="ann_sem")
                 ann_priority = st.selectbox("Priority", ["Normal", "Important", "Urgent"], key="ann_priority")
@@ -1046,7 +1045,7 @@ if role == "lecturer":
         
         st.divider()
         
-        all_assignments = pd.read_sql_query("""
+        all_assignments = db_query("""
         SELECT 
             assignments.id,
             assignments.title,
@@ -1091,7 +1090,7 @@ if role == "lecturer":
                     with st.expander("{} - {} ({})".format(assign['semester'], assign['subject'], assign['title'])):
                         st.write("**Deadline:** {}".format(assign['deadline']))
                         st.write("**Overdue by:** {} days".format(abs(assign['days'])))
-                        submissions = pd.read_sql_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s", conn, params=(assign['id'],))
+                        submissions = db_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s", conn, params=(assign['id'],))
                         st.metric("Submissions Received", submissions.iloc[0]['count'])
             
             if due_today:
@@ -1107,13 +1106,13 @@ if role == "lecturer":
             st.divider()
             st.subheader("📈 Submission Statistics")
             for _, assignment in all_assignments.iterrows():
-                total_submissions = pd.read_sql_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s", conn, params=(assignment['id'],)).iloc[0]['count']
+                total_submissions = db_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s", conn, params=(assignment['id'],)).iloc[0]['count']
                 deadline_display = format_deadline_display(assignment['deadline'])
                 with st.expander("{} - {} | {}".format(assignment['subject'], assignment['title'], deadline_display)):
                     col_a, col_b = st.columns(2)
                     with col_a: st.metric("Total Submissions", total_submissions)
                     with col_b:
-                        graded = pd.read_sql_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s AND marks IS NOT NULL AND marks != ''", conn, params=(assignment['id'],)).iloc[0]['count']
+                        graded = db_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s AND marks IS NOT NULL AND marks != ''", conn, params=(assignment['id'],)).iloc[0]['count']
                         st.metric("Graded", graded)
 
     # SEMESTERS
@@ -1124,7 +1123,7 @@ if role == "lecturer":
                 st.error("Semester name cannot be empty.")
             else:
                 try:
-                    c.execute("INSERT INTO semesters(name) VALUES(%s)", (name.strip(),))
+                    success,erro = db_execute("INSERT INTO semesters(name) VALUES(%s)", (name.strip(),))
                     conn.commit()
                     st.success("✅ Semester Added")
                     st.rerun()
@@ -1132,11 +1131,11 @@ if role == "lecturer":
                     conn.rollback()
                     st.warning("⚠️ Semester already exists.")
 
-        st.dataframe(pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn), use_container_width=True, hide_index=True)
+        st.dataframe(db_query("SELECT * FROM semesters ORDER BY name ASC", conn), use_container_width=True, hide_index=True)
         st.divider()
         st.subheader("Delete Semester")
 
-        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn) 
+        sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn) 
         if not sems.empty:
             semester_options = {f"{row['name']} (ID:{row['id']})": row['id'] for _, row in sems.iterrows()}
             selected_sem = st.selectbox("select Semester to Delete", list(semester_options.keys()), key="delete_semester")
@@ -1144,29 +1143,29 @@ if role == "lecturer":
                 sem_id = semester_options[selected_sem]
                 try:
                     deleted_files = 0
-                    subject_ids = pd.read_sql_query("SELECT id FROM subjects WHERE semester_id=%s", conn, params=(int(sem_id),))
+                    subject_ids = db_query("SELECT id FROM subjects WHERE semester_id=%s", conn, params=(int(sem_id),))
                     for _, subject_row in subject_ids.iterrows():
-                        assignments = pd.read_sql_query("SELECT id, question_file FROM assignments WHERE subject_id=%s", conn, params=(subject_row["id"],))
+                        assignments = db_query("SELECT id, question_file FROM assignments WHERE subject_id=%s", conn, params=(subject_row["id"],))
                         for _, assign_row in assignments.iterrows():
-                            submissions = pd.read_sql_query("SELECT submission_file FROM submissions WHERE assignment_id=%s", conn, params=(assign_row["id"],))
+                            submissions = db_query("SELECT submission_file FROM submissions WHERE assignment_id=%s", conn, params=(assign_row["id"],))
                             for _, sub_row in submissions.iterrows():
                                 if sub_row['submission_file'] and os.path.exists(sub_row['submission_file']):
                                     try: os.remove(sub_row['submission_file']); deleted_files += 1
                                     except: pass
-                            c.execute("DELETE FROM submissions WHERE assignment_id=%s", (assign_row["id"],))
+                            success,erro = db_execute("DELETE FROM submissions WHERE assignment_id=%s", (assign_row["id"],))
                             if assign_row['question_file'] and os.path.exists(assign_row['question_file']):
                                 try: os.remove(assign_row['question_file']); deleted_files += 1
                                 except: pass
-                        c.execute("DELETE FROM assignments WHERE subject_id=%s", (subject_row["id"],))
-                        materials = pd.read_sql_query("SELECT file_path FROM study_materials WHERE subject_id=%s", conn, params=(subject_row["id"],))
+                        success,erro = db_execute("DELETE FROM assignments WHERE subject_id=%s", (subject_row["id"],))
+                        materials = db_query("SELECT file_path FROM study_materials WHERE subject_id=%s", conn, params=(subject_row["id"],))
                         for _, mat_row in materials.iterrows():
                             if mat_row['file_path'] and os.path.exists(mat_row['file_path']):
                                 try: os.remove(mat_row['file_path']); deleted_files += 1
                                 except: pass
-                        c.execute("DELETE FROM study_materials WHERE subject_id=%s", (subject_row["id"],))
-                    c.execute("DELETE FROM subjects WHERE semester_id=%s", (sem_id,))
-                    c.execute("UPDATE users SET semester_id=NULL WHERE semester_id=%s", (sem_id,))
-                    c.execute("DELETE FROM semesters WHERE id=%s", (sem_id,))
+                        success,erro = db_execute("DELETE FROM study_materials WHERE subject_id=%s", (subject_row["id"],))
+                    success,erro = db_execute("DELETE FROM subjects WHERE semester_id=%s", (sem_id,))
+                    success,erro = db_execute("UPDATE users SET semester_id=NULL WHERE semester_id=%s", (sem_id,))
+                    success,erro = db_execute("DELETE FROM semesters WHERE id=%s", (sem_id,))
                     conn.commit()
                     st.success("✅ Semester deleted! Removed {} files from disk.".format(deleted_files))
                     st.rerun()
@@ -1177,7 +1176,7 @@ if role == "lecturer":
     # SUBJECTS
     with tabs[2]:
         st.title("📚 Subject Management")
-        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
         if sems.empty:
             st.warning("Please create a semester first.")
         else:
@@ -1194,7 +1193,7 @@ if role == "lecturer":
                     st.error("Subject name cannot be empty.")
                 else:
                     try:
-                        c.execute("INSERT INTO subjects(name,semester_id) VALUES(%s,%s)", (sub.strip(), int(sem_id)))
+                        success,erro = db_execute("INSERT INTO subjects(name,semester_id) VALUES(%s,%s)", (sub.strip(), int(sem_id)))
                         conn.commit()
                         st.success("✅ Subject '{}' added to {}".format(sub.strip(), sem))
                         st.rerun()
@@ -1204,7 +1203,7 @@ if role == "lecturer":
             
             st.divider()
             st.subheader("📋 Subjects for: {}".format(sem))
-            subjects_for_sem = pd.read_sql_query("SELECT * FROM subjects WHERE semester_id=%s ORDER BY name ASC", conn, params=(int(sem_id),))
+            subjects_for_sem = db_query("SELECT * FROM subjects WHERE semester_id=%s ORDER BY name ASC", conn, params=(int(sem_id),))
             
             if subjects_for_sem.empty:
                 st.info("No subjects found for this semester.")
@@ -1224,15 +1223,15 @@ if role == "lecturer":
                     if st.button("🗑️ Confirm Delete Subject", type="primary", use_container_width=True):
                         subject_id = subject_options[selected_subject]
                         try:
-                            assignment_ids = pd.read_sql_query("SELECT id FROM assignments WHERE subject_id=%s", conn, params=(int(subject_id),))
+                            assignment_ids = db_query("SELECT id FROM assignments WHERE subject_id=%s", conn, params=(int(subject_id),))
                             for _, row in assignment_ids.iterrows():
-                                c.execute("DELETE FROM submissions WHERE assignment_id=%s", (row["id"],))
-                            c.execute("DELETE FROM assignments WHERE subject_id=%s", (int(subject_id),))
-                            materials = pd.read_sql_query("SELECT file_path FROM study_materials WHERE subject_id=%s", conn, params=(int(subject_id),))
+                                success,erro = db_execute("DELETE FROM submissions WHERE assignment_id=%s", (row["id"],))
+                            success,erro = db_execute("DELETE FROM assignments WHERE subject_id=%s", (int(subject_id),))
+                            materials = db_query("SELECT file_path FROM study_materials WHERE subject_id=%s", conn, params=(int(subject_id),))
                             for _, mat in materials.iterrows():
                                 if mat['file_path'] and os.path.exists(mat['file_path']): os.remove(mat['file_path'])
-                            c.execute("DELETE FROM study_materials WHERE subject_id=%s", (int(subject_id),))
-                            c.execute("DELETE FROM subjects WHERE id=%s", (int(subject_id),))
+                            success,erro = db_execute("DELETE FROM study_materials WHERE subject_id=%s", (int(subject_id),))
+                            success,erro = db_execute("DELETE FROM subjects WHERE id=%s", (int(subject_id),))
                             conn.commit()
                             st.success("✅ Subject deleted successfully!")
                             st.rerun()
@@ -1244,7 +1243,7 @@ if role == "lecturer":
             
             st.divider()
             with st.expander("🔍 View All Subjects (All Semesters)"):
-                all_subjects_debug = pd.read_sql_query("""
+                all_subjects_debug = db_query("""
                 SELECT subjects.id as ID, subjects.name as Subject, semesters.name as Semester
                 FROM subjects JOIN semesters ON subjects.semester_id = semesters.id
                 ORDER BY semesters.name, subjects.name
@@ -1258,7 +1257,7 @@ if role == "lecturer":
     with tabs[3]:
         st.title("📝 Assignment Management")
         st.subheader("➕ Create New Assignment")
-        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
         if sems.empty:
             st.warning("Please create a semester first.")
         else:
@@ -1266,7 +1265,7 @@ if role == "lecturer":
             with col1:
                 sem_name = st.selectbox("Select Semester", sems["name"], key="assign_sem")
                 sem_id = int(sems[sems["name"] == sem_name]["id"].values[0])
-                subjects = pd.read_sql_query("SELECT * FROM subjects WHERE semester_id=%s", conn, params=(sem_id,))
+                subjects = db_query("SELECT * FROM subjects WHERE semester_id=%s", conn, params=(sem_id,))
                 if subjects.empty:
                     st.warning("Please create a subject for this semester first.")
                     subject_selected = None
@@ -1300,7 +1299,7 @@ if role == "lecturer":
                                 st.error("❌ File Save Failed: {}".format(result))
                                 file_path = ""
                     try:
-                        c.execute("""
+                        success,erro = db_execute("""
                         INSERT INTO assignments(title,subject_id,deadline,question_file,rubric)
                         VALUES(%s,%s,%s,%s,%s)
                         """, (title.strip(), int(sub_id), str(deadline), file_path, rubric_text.strip()))
@@ -1317,18 +1316,18 @@ if role == "lecturer":
 
         st.divider()
         st.subheader("📋 Existing Assignments")
-        view_sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        view_sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
         if not view_sems.empty:
             view_filter = st.selectbox("Filter by Semester", ["All"] + view_sems["name"].tolist(), key="view_assign_filter")
             if view_filter == "All":
-                all_assignments = pd.read_sql_query("""
+                all_assignments = db_query("""
                 SELECT assignments.id as ID, assignments.title as Title, subjects.name as Subject, semesters.name as Semester, assignments.deadline as Deadline, assignments.question_file as File
                 FROM assignments JOIN subjects ON assignments.subject_id = subjects.id JOIN semesters ON subjects.semester_id = semesters.id
                 ORDER BY assignments.deadline DESC
                 """, conn)
             else:
                 filter_sem_id = int(view_sems[view_sems["name"] == view_filter]["id"].values[0])
-                all_assignments = pd.read_sql_query("""
+                all_assignments = db_query("""
                 SELECT assignments.id as ID, assignments.title as Title, subjects.name as Subject, semesters.name as Semester, assignments.deadline as Deadline, assignments.question_file as File
                 FROM assignments JOIN subjects ON assignments.subject_id = subjects.id JOIN semesters ON subjects.semester_id = semesters.id
                 WHERE semesters.id = %s ORDER BY assignments.deadline DESC
@@ -1342,7 +1341,7 @@ if role == "lecturer":
                 st.divider()
                 st.subheader("📄 Assignment Details")
                 for _, assignment in all_assignments.iterrows():
-                    submission_count = pd.read_sql_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s", conn, params=(assignment['ID'],)).iloc[0]['count']
+                    submission_count = db_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s", conn, params=(assignment['ID'],)).iloc[0]['count']
                     deadline_display = format_deadline_display(assignment['Deadline'])
                     with st.expander("{} - {} - {} | {}".format(assignment['Semester'], assignment['Subject'], assignment['Title'], deadline_display)):
                         col_detail1, col_detail2 = st.columns([2, 1])
@@ -1384,12 +1383,12 @@ if role == "lecturer":
                         with col_del2:
                             if st.button("🗑️ Delete Assignment", key="delete_assign_{}".format(assignment['ID']), type="primary", use_container_width=True):
                                 try:
-                                    submissions = pd.read_sql_query("SELECT submission_file FROM submissions WHERE assignment_id=%s", conn, params=(assignment['ID'],))
+                                    submissions = db_query("SELECT submission_file FROM submissions WHERE assignment_id=%s", conn, params=(assignment['ID'],))
                                     for _, sub in submissions.iterrows():
                                         if sub['submission_file'] and os.path.exists(sub['submission_file']): os.remove(sub['submission_file'])
-                                    c.execute("DELETE FROM submissions WHERE assignment_id=%s", (assignment['ID'],))
+                                    success,erro = db_execute("DELETE FROM submissions WHERE assignment_id=%s", (assignment['ID'],))
                                     if assignment['File'] and os.path.exists(assignment['File']): os.remove(assignment['File'])
-                                    c.execute("DELETE FROM assignments WHERE id=%s", (assignment['ID'],))
+                                    success,erro = db_execute("DELETE FROM assignments WHERE id=%s", (assignment['ID'],))
                                     conn.commit()
                                     st.success("✅ Assignment '{}' deleted successfully!".format(assignment['Title']))
                                     st.rerun()
@@ -1400,18 +1399,18 @@ if role == "lecturer":
     # SUBMISSIONS & AI
     with tabs[4]:
         st.subheader("Student Submissions & AI Grading")
-        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
         if not sems.empty:
             selected_sem = st.selectbox("Filter by Semester", ["All"] + sems["name"].tolist(), key="filter_sem")
             if selected_sem == "All":
-                df = pd.read_sql_query("""
+                df = db_query("""
                 SELECT submissions.id, users.username, users.full_name, semesters.name as semester, subjects.name as subject, assignments.title as assignment, assignments.rubric, submissions.submission_time, submissions.submission_file, submissions.marks, submissions.ai_summary
                 FROM submissions JOIN users ON submissions.student_id = users.id JOIN assignments ON submissions.assignment_id = assignments.id JOIN subjects ON assignments.subject_id = subjects.id JOIN semesters ON subjects.semester_id = semesters.id
                 ORDER BY submissions.submission_time DESC
                 """, conn)
             else:
                 sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
-                df = pd.read_sql_query("""
+                df = db_query("""
                 SELECT submissions.id, users.username, users.full_name, semesters.name as semester, subjects.name as subject, assignments.title as assignment, assignments.rubric, submissions.submission_time, submissions.submission_file, submissions.marks, submissions.ai_summary
                 FROM submissions JOIN users ON submissions.student_id = users.id JOIN assignments ON submissions.assignment_id = assignments.id JOIN subjects ON assignments.subject_id = subjects.id JOIN semesters ON subjects.semester_id = semesters.id
                 WHERE semesters.id = %s ORDER BY submissions.submission_time DESC
@@ -1459,13 +1458,13 @@ if role == "lecturer":
                                             if result and "Error" not in str(result):
                                                 marks = extract_marks(result)
                                                 if marks is not None:
-                                                    c.execute("UPDATE submissions SET marks=%s, ai_summary=%s WHERE id=%s", (marks, result, row["id"]))
+                                                    success,erro = db_execute("UPDATE submissions SET marks=%s, ai_summary=%s WHERE id=%s", (marks, result, row["id"]))
                                                     conn.commit()
                                                     st.success("Updated marks: {}/10".format(marks))
                                                     st.rerun()
                                                 else:
                                                     st.warning("Could not extract marks from AI response.Please enter manually below")
-                                                    c.execute("UPDATE submissions SET ai_summary=%s WHERE id=%s", (str(result), int(row["id"])))
+                                                    success,erro = db_execute("UPDATE submissions SET ai_summary=%s WHERE id=%s", (str(result), int(row["id"])))
                                                     conn.commit()
                                             else:
                                                 st.error("AI returned an error. Check the response above.")
@@ -1478,7 +1477,7 @@ if role == "lecturer":
                                 except: default_marks = 0
                             manual_marks = st.number_input("Or enter marks manually", min_value=0, max_value=10, value=default_marks, key="manual_{}".format(row['id']))
                             if st.button("Save Manual Marks", key="save_{}".format(row['id'])):
-                                c.execute("UPDATE submissions SET marks=%s WHERE id=%s", (manual_marks, row["id"]))
+                                success,erro = db_execute("UPDATE submissions SET marks=%s WHERE id=%s", (manual_marks, row["id"]))
                                 conn.commit()
                                 st.success("Marks updated to {}/10".format(manual_marks))
                                 st.rerun()
@@ -1490,7 +1489,7 @@ if role == "lecturer":
     with tabs[5]:
         st.title(" Performance Analytics")
         st.subheader("📈 Class Performance Trend")
-        trend_data = pd.read_sql_query("""
+        trend_data = db_query("""
         SELECT assignments.title as Assignment, AVG(CAST(submissions.marks AS FLOAT)) as Average_Marks
         FROM submissions JOIN assignments ON submissions.assignment_id = assignments.id
         WHERE submissions.marks IS NOT NULL AND submissions.marks != ''
@@ -1505,11 +1504,11 @@ if role == "lecturer":
         st.divider() 
 
         st.subheader("📊 Grade Statistics")
-        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
         if not sems.empty:
             selected_sem = st.selectbox("Select Semester", ["All"] + sems["name"].tolist(), key="analytics_sem")
             if selected_sem == "All":
-                df = pd.read_sql_query("""
+                df = db_query("""
                 SELECT semesters.name as Semester, subjects.name as Subject, assignments.title as Assignment, users.full_name as Student_Name, users.username as Username, submissions.submission_time as Submission_Date, assignments.deadline as Deadline, submissions.marks as Marks, submissions.ai_summary as AI_Feedback
                 FROM submissions JOIN assignments ON submissions.assignment_id=assignments.id JOIN subjects ON assignments.subject_id = subjects.id JOIN semesters ON subjects.semester_id = semesters.id JOIN users ON submissions.student_id = users.id
                 WHERE submissions.marks IS NOT NULL AND submissions.marks != ''
@@ -1517,7 +1516,7 @@ if role == "lecturer":
                 """, conn)
             else:
                 sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
-                df = pd.read_sql_query("""
+                df = db_query("""
                 SELECT semesters.name as Semester, subjects.name as Subject, assignments.title as Assignment, users.full_name as Student_Name, users.username as Username, submissions.submission_time as Submission_Date, assignments.deadline as Deadline, submissions.marks as Marks, submissions.ai_summary as AI_Feedback
                 FROM submissions JOIN assignments ON submissions.assignment_id=assignments.id JOIN subjects ON assignments.subject_id = subjects.id JOIN semesters ON subjects.semester_id = semesters.id JOIN users ON submissions.student_id = users.id
                 WHERE semesters.id = %s AND submissions.marks IS NOT NULL AND submissions.marks != ''
@@ -1567,10 +1566,10 @@ if role == "lecturer":
     with tabs[6]:
         st.subheader("⚠️ Emergency Fix for Existing Students")
         if st.button("🔧 Fix ALL Students with NULL semester"):
-            default_sem = pd.read_sql_query("SELECT id FROM semesters ORDER BY id ASC LIMIT 1", conn)
+            default_sem = db_query("SELECT id FROM semesters ORDER BY id ASC LIMIT 1", conn)
             if not default_sem.empty:
                 default_sem_id = int(default_sem.iloc[0]['id'])
-                c.execute("UPDATE users SET semester_id = %s WHERE role = 'student' AND semester_id IS NULL", (default_sem_id,))
+                success,erro = db_execute("UPDATE users SET semester_id = %s WHERE role = 'student' AND semester_id IS NULL", (default_sem_id,))
                 conn.commit()
                 affected = c.rowcount
                 st.success("✅ Fixed {} students - assigned to semester_id {}".format(affected, default_sem_id))
@@ -1585,7 +1584,7 @@ if role == "lecturer":
             username = st.text_input("Username", key="student_username")
             password = st.text_input("Password", type="password", key="student_password")
         with col2:
-            sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+            sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
             if sems.empty:
                 st.warning("Please create semesters first.")
             else:
@@ -1600,12 +1599,12 @@ if role == "lecturer":
                     else:
                         try:
                             semester_id_to_insert = int(semester_id)
-                            c.execute("""
+                            success,erro = db_execute("""
                             INSERT INTO users(full_name, username, password, role, semester_id)
                             VALUES(%s, %s, %s, %s, %s)
                             """, (student_name.strip(), username.strip(), hash_password(password.strip()), "student", semester_id_to_insert))
                             conn.commit()
-                            verify = pd.read_sql_query("SELECT * FROM users WHERE username=%s", conn, params=(username.strip(),))
+                            verify = db_query("SELECT * FROM users WHERE username=%s", conn, params=(username.strip(),))
                             if not verify.empty:
                                 st.success("✅ Student '{}' created!".format(username))
                                 st.rerun()
@@ -1629,7 +1628,7 @@ if role == "lecturer":
                 st.error("CSV must contain columns: Name, Username, password, Semester")
             else:
                 if st.button("🚀 Process & Register Students"):
-                    sems = pd.read_sql_query("SELECT * FROM semesters", conn)
+                    sems = db_query("SELECT * FROM semesters", conn)
                     success_count = 0
                     error_count = 0
                     for _, row in df_csv.iterrows():
