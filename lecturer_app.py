@@ -147,12 +147,8 @@ except Exception as e:
 # ================= SAFE DATABASE EXECUTION =================
 
 def db_execute(query, params=None):
-    """
-    Safe execution for INSERT, UPDATE, DELETE
-    Automatically commits or rollbacks.
-    """
     try:
-        success,erro = C.execute(query, params)
+        c.execute(query, params)
         conn.commit()
         return True, None
     except Exception as e:
@@ -161,15 +157,10 @@ def db_execute(query, params=None):
 
 
 def db_query(query, params=None):
-    """
-    Safe execution for SELECT queries.
-    Returns pandas DataFrame.
-    """
     try:
-        return db_query(query, conn, params=params)
+        return pd. read _swl_query(query, conn, params=params)
     except Exception as e:
         conn.rollback()
-        st.error(f"Database Error: {e}")
         return pd.DataFrame()
 # USERS
 try:
@@ -639,8 +630,8 @@ def send_email_notification(target_semester_id, subject, message_body):
     if not emails:
         return False, "No valid student emails found."
 
-    SENDER_EMAIL = "your_platform_email@gmail.com" 
-    APP_PASSWORD = "your_16_digit_app_password"
+    SENDER_EMAIL = st.secrets["EMAIL_USER"]
+    APP_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 
     try:
         msg = MIMEMultipart()
