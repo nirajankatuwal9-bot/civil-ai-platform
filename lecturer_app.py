@@ -166,7 +166,7 @@ def db_query(query, params=None):
     Returns pandas DataFrame.
     """
     try:
-        return pd.read_sql_query(query, conn, params=params)
+        return db_query(query, conn, params=params)
     except Exception as e:
         conn.rollback()
         st.error(f"Database Error: {e}")
@@ -433,7 +433,7 @@ def db_query(query, params=None):
     Returns pandas DataFrame.
     """
     try:
-        return pd.read_sql_query(query, conn, params=params)
+        return db_query(query, conn, params=params)
     except Exception as e:
         conn.rollback()
         st.error(f"Database Error: {e}")
@@ -1176,7 +1176,7 @@ if role == "lecturer":
         st.subheader("📋 Existing Semesters")
         
         try:
-            df_sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+            df_sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
             st.dataframe(df_sems, use_container_width=True, hide_index=True)
         except Exception as e:
             st.error(f"Error loading semesters: {e}")
@@ -1582,7 +1582,7 @@ if role == "lecturer":
         
         if st.button("🔧 Fix ALL Students with NULL semester"):
             # Get first semester as default
-            default_sem = pd.read_sql_query("SELECT id FROM semesters ORDER BY id ASC LIMIT 1", conn)
+            default_sem = db_query("SELECT id FROM semesters ORDER BY id ASC LIMIT 1", conn)
             
             if not default_sem.empty:
                 default_sem_id = int(default_sem.iloc[0]['id'])
@@ -1617,7 +1617,7 @@ if role == "lecturer":
             password = st.text_input("Password", type="password", key="student_password")
 
         with col2:
-            sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+            sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
 
             if sems.empty:
                 st.warning("Please create semesters first.")
@@ -1657,7 +1657,7 @@ if role == "lecturer":
                             conn.commit()
                             
                             # Verify insertion
-                            verify = pd.read_sql_query(
+                            verify = db_query(
                                 "SELECT * FROM users WHERE username=%s",
                                 conn,
                                 params=(username.strip(),)
@@ -1699,7 +1699,7 @@ if role == "lecturer":
             else:
                 st.write("🔍 Data Preview:", df_csv.head())
                 if st.button("🚀 Process & Register Students"):
-                    sems = pd.read_sql_query("SELECT * FROM semesters", conn)
+                    sems = db_query("SELECT * FROM semesters", conn)
                     success_count = 0
                     error_count = 0
 
@@ -1744,7 +1744,7 @@ if role == "lecturer":
         st.subheader("📋 Registered Student List")
 
         # 1. Filter Dropdown for Sorting/Viewing
-        all_sems_list = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        all_sems_list = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
         filter_col1, filter_col2 = st.columns([1, 2])
         
         with filter_col1:
@@ -1752,7 +1752,7 @@ if role == "lecturer":
 
         # 2. Build Query: Sorted by Semester, then Alphabetically by Name
         if list_filter == "All":
-            students_df = pd.read_sql_query("""
+            students_df = db_query("""
                 SELECT 
                     users.id as ID,
                     users.full_name as Name, 
@@ -1764,7 +1764,7 @@ if role == "lecturer":
                 ORDER BY semesters.name ASC, users.full_name ASC
             """, conn)
         else:
-            students_df = pd.read_sql_query("""
+            students_df = db_query("""
                 SELECT 
                     users.id as ID,
                     users.full_name as Name, 
@@ -1851,7 +1851,7 @@ if role == "lecturer":
         st.subheader("🔧 Update Student Semester Assignment")
 
         # Get all students for semester update
-        all_students = pd.read_sql_query("""
+        all_students = db_query("""
         SELECT id, username, full_name, semester_id 
         FROM users 
         WHERE role='student'
@@ -1874,7 +1874,7 @@ if role == "lecturer":
                 )
             
             with col_update2:
-                sems_update = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+                sems_update = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
                 
                 if not sems_update.empty:
                     new_semester = st.selectbox(
@@ -1917,7 +1917,7 @@ if role == "lecturer":
         
         with col1:
             # Select Semester
-            sems_material = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+            sems_material = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
             
             if sems_material.empty:
                 st.warning("Please create semesters first.")
@@ -1926,7 +1926,7 @@ if role == "lecturer":
                 material_sem_id = int(sems_material[sems_material["name"] == material_semester]["id"].values[0])
                 
                 # Get subjects for selected semester
-                subjects_material = pd.read_sql_query(
+                subjects_material = db_query(
                     "SELECT * FROM subjects WHERE semester_id=%s",
                     conn,
                     params=(material_sem_id,)
@@ -2015,7 +2015,7 @@ if role == "lecturer":
         st.subheader("📋 Uploaded Study Materials")
         
         # Filter by semester
-        filter_sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        filter_sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
         
         if not filter_sems.empty:
             filter_semester = st.selectbox(
@@ -2026,7 +2026,7 @@ if role == "lecturer":
             
             # Query materials
             if filter_semester == "All":
-                materials_df = pd.read_sql_query("""
+                materials_df = db_query("""
                 SELECT 
                     study_materials.id,
                     study_materials.title,
@@ -2042,7 +2042,7 @@ if role == "lecturer":
                 """, conn)
             else:
                 filter_sem_id = int(filter_sems[filter_sems["name"] == filter_semester]["id"].values[0])
-                materials_df = pd.read_sql_query("""
+                materials_df = db_query("""
                 SELECT 
                     study_materials.id,
                     study_materials.title,
@@ -2288,19 +2288,19 @@ if role == "lecturer":
         col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
         
         with col_stat1:
-            semester_count = pd.read_sql_query("SELECT COUNT(*) as count FROM semesters", conn).iloc[0]['count']
+            semester_count = db_query("SELECT COUNT(*) as count FROM semesters", conn).iloc[0]['count']
             st.metric("🎓 Semesters", semester_count)
         
         with col_stat2:
-            student_count = pd.read_sql_query("SELECT COUNT(*) as count FROM users WHERE role='student'", conn).iloc[0]['count']
+            student_count = db_query("SELECT COUNT(*) as count FROM users WHERE role='student'", conn).iloc[0]['count']
             st.metric("👥 Students", student_count)
         
         with col_stat3:
-            assignment_count = pd.read_sql_query("SELECT COUNT(*) as count FROM assignments", conn).iloc[0]['count']
+            assignment_count = db_query("SELECT COUNT(*) as count FROM assignments", conn).iloc[0]['count']
             st.metric("📝 Assignments", assignment_count)
         
         with col_stat4:
-            submission_count = pd.read_sql_query("SELECT COUNT(*) as count FROM submissions", conn).iloc[0]['count']
+            submission_count = db_query("SELECT COUNT(*) as count FROM submissions", conn).iloc[0]['count']
             st.metric("📤 Submissions", submission_count)
             st.divider()
         
@@ -2393,7 +2393,7 @@ if role == "lecturer":
         st.title("👤 Student Profile Viewer")
         
         # Select student
-        all_students = pd.read_sql_query("""
+        all_students = db_query("""
         SELECT users.id, users.username, users.full_name, semesters.name as semester
         FROM users
         LEFT JOIN semesters ON users.semester_id = semesters.id
@@ -2540,7 +2540,7 @@ elif role == "student":
         st.title("📝 My Assignments")
 
         # 1. First, get student's semester info
-        student_info = pd.read_sql_query(
+        student_info = db_query(
             "SELECT semester_id, username FROM users WHERE id=%s",
             conn,
             params=(int(st.session_state.user_id),)
@@ -2601,7 +2601,7 @@ elif role == "student":
         st.title("📝 My Assignments")
 
         # Get student's semester
-        student_info = pd.read_sql_query(
+        student_info = db_query(
             "SELECT semester_id, username FROM users WHERE id=%s",
             conn,
             params=(int(st.session_state.user_id),)
@@ -2620,7 +2620,7 @@ elif role == "student":
         sem_id = int(sem_id_raw)
 
         # Get semester name
-        semester_info = pd.read_sql_query(
+        semester_info = db_query(
             "SELECT name FROM semesters WHERE id=%s",
             conn,
             params=(sem_id,)
@@ -2633,7 +2633,7 @@ elif role == "student":
         st.subheader("⏰ Deadline Reminders")
         
         # Get all assignments for student's semester
-        all_assignments = pd.read_sql_query("""
+        all_assignments = db_query("""
         SELECT 
             assignments.id,
             assignments.title,
@@ -2655,7 +2655,7 @@ elif role == "student":
             
             for _, assignment in all_assignments.iterrows():
                 # Check if submitted
-                submission = pd.read_sql_query("""
+                submission = db_query("""
                 SELECT id FROM submissions
                 WHERE assignment_id=%s AND student_id=%s
                 """, conn, params=(int(assignment['id']), int(st.session_state.user_id)))
@@ -2729,7 +2729,7 @@ elif role == "student":
         st.subheader("📋 All Assignments")
         
         # Get assignments for student's semester
-        assignments = pd.read_sql_query("""
+        assignments = db_query("""
         SELECT assignments.*, subjects.name as subject
         FROM assignments
         JOIN subjects ON assignments.subject_id = subjects.id
@@ -2743,7 +2743,7 @@ elif role == "student":
             for index, row in assignments.iterrows():
                 
                 # Check submission status
-                existing_submission = pd.read_sql_query("""
+                existing_submission = db_query("""
                 SELECT * FROM submissions
                 WHERE assignment_id=%s AND student_id=%s
                 """, conn, params=(int(row["id"]), int(st.session_state.user_id)))
@@ -2887,7 +2887,7 @@ elif role == "student":
         st.title("📚 Study Materials")
         
         # Get student's semester
-        student_info = pd.read_sql_query(
+        student_info = db_query(
             "SELECT semester_id FROM users WHERE id=%s",
             conn,
             params=(int(st.session_state.user_id),)
@@ -2899,7 +2899,7 @@ elif role == "student":
             sem_id = int(student_info.iloc[0]["semester_id"])
             
             # Get semester name
-            semester_info = pd.read_sql_query(
+            semester_info = db_query(
                 "SELECT name FROM semesters WHERE id=%s",
                 conn,
                 params=(sem_id,)
@@ -2909,7 +2909,7 @@ elif role == "student":
                 st.info("📚 Study Materials for: **{}**".format(semester_info.iloc[0]['name']))
             
             # Get all materials for student's semester
-            materials = pd.read_sql_query("""
+            materials = db_query("""
             SELECT 
                 study_materials.id,
                 study_materials.title,
@@ -2984,7 +2984,7 @@ elif role == "student":
         try:
             student_id = int(st.session_state.user_id)
             # Use the sem_id we calculated at the start of the student section
-            results_df = pd.read_sql_query(query, conn, params=(student_id, sem_id))
+            results_df = db_query(query, conn, params=(student_id, sem_id))
 
             if results_df.empty:
                 st.info("📭 No assignments have been posted for your semester yet.")
