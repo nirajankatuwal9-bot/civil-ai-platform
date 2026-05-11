@@ -387,8 +387,8 @@ if not st.session_state.logged_in:
                         st.session_state.username = res.iloc[0]["username"]
                         st.session_state.semester_id = res.iloc[0]["semester_id"]
                         st.rerun()
-                else:
-                    st.error("Invalid credentials")
+                    else:
+                        st.error("Invalid credentials")
 
             except Exception as e:
                 conn.rollback()
