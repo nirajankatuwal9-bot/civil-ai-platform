@@ -198,6 +198,21 @@ except Exception:
     conn = init_connection()
     c = conn.cursor()
 
+# ================= THE "LIGHTNING" CACHE LAYER =================
+
+# The underscore (_conn) tells Streamlit NOT to try and hash the live database connection
+@st.cache_data(ttl=600) # Keep in RAM for 10 minutes
+def get_cached_semesters(_connection):
+    return pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", _connection)
+
+@st.cache_data(ttl=600)
+def get_cached_subjects(_connection):
+    return pd.read_sql_query("SELECT * FROM subjects ORDER BY name ASC", _connection)
+
+def clear_data_caches():
+    """Run this whenever you add/delete a semester or subject"""
+    get_cached_semesters.clear()
+    get_cached_subjects.clear()
 # USERS
 c.execute("""
 CREATE TABLE IF NOT EXISTS users(
@@ -1363,7 +1378,7 @@ if role == "lecturer":
         st.divider()
         st.subheader("Delete Semester")
 
-        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn) 
+        sems = get_cached_semesters(conn) 
         if not sems.empty:
             semester_options={
                 f"{row['name']} (ID:{row['id']})": row['id']
@@ -1469,7 +1484,7 @@ if role == "lecturer":
         
         st.title("📚 Subject Management")
         
-        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        sems = get_cached_semesters(conn)
 
         if sems.empty:
             st.warning("Please create a semester first.")
@@ -1624,7 +1639,7 @@ if role == "lecturer":
         # ========== CREATE NEW ASSIGNMENT ==========
         st.subheader("➕ Create New Assignment")
 
-        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        sems = get_cached_semesters(conn)
 
         if sems.empty:
             st.warning("Please create a semester first.")
@@ -1716,7 +1731,7 @@ if role == "lecturer":
         st.subheader("📋 Existing Assignments")
         
         # Filter option
-        view_sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        view_sems = get_cached_semesters(conn)
         
         if not view_sems.empty:
             view_filter = st.selectbox("Filter by Semester", ["All"] + view_sems["name"].tolist(), key="view_assign_filter")
@@ -1890,7 +1905,7 @@ if role == "lecturer":
         st.subheader("Student Submissions & AI Grading")
 
         # filter by semester
-        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        sems = get_cached_semesters(conn)
 
         if not sems.empty:
             selected_sem = st.selectbox("Filter by Semester", ["All"] + sems["name"].tolist(), key="filter_sem")
@@ -2090,7 +2105,7 @@ if role == "lecturer":
 
         st.subheader("📊 Grade Statistics")
         
-        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        sems = get_cached_semesters(conn)
         
         if not sems.empty:
             selected_sem = st.selectbox("Select Semester", ["All"] + sems["name"].tolist(), key="analytics_sem")
@@ -2279,7 +2294,7 @@ if role == "lecturer":
             password = st.text_input("Password", type="password", key="student_password")
 
         with col2:
-            sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+            sems = get_cached_semesters(conn)
 
             if sems.empty:
                 st.warning("Please create semesters first.")
@@ -2677,7 +2692,7 @@ if role == "lecturer":
         st.subheader("📋 Uploaded Study Materials")
         
         # Filter by semester
-        filter_sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        filter_sems = get_cached_semesters(conn)
         
         if not filter_sems.empty:
             filter_semester = st.selectbox(
