@@ -177,16 +177,23 @@ def get_announcements_for_semester(semester_id=None):
 
 @st.cache_resource(ttl=600)
 def init_connection():
-    return psycopg2.connect(st.secrets["DATABASE_URL"])
+    # Added connect_timeout=10 so the app NEVER hangs for more than 10 seconds
+    return psycopg2.connect(st.secrets["DATABASE_URL"], connect_timeout=10)
 
 conn = init_connection()
 
-# The "Self-Healing" Ping
+# 1. First, check if psycopg2 already knows the connection is dead
+if conn.closed != 0:
+    st.cache_resource.clear()
+    conn = init_connection()
+
+# 2. Safe Ping & Clean
 try:
-    conn.rollback()  # <-- CRITICAL FIX: Clears any stuck/aborted transactions
     c = conn.cursor()
-    c.execute("SELECT 1")
-except Exception:    # <-- Broadened to catch ANY connection state issue
+    c.execute("SELECT 1") # Ping the server
+    conn.rollback()       # Clean up only IF the server responds
+except Exception:
+    # If the ping fails or times out, burn it down and reconnect
     st.cache_resource.clear()
     conn = init_connection()
     c = conn.cursor()
