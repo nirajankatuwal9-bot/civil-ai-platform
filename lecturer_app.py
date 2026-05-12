@@ -147,7 +147,6 @@ except Exception as e:
 # ================= DATABASE CONNECTION =================
 
 try:
-    # Fetch the connection string from Streamlit Secrets
     DATABASE_URL = st.secrets.get("DATABASE_URL")
     
     if not DATABASE_URL:
@@ -156,7 +155,7 @@ try:
 
     # Connect to PostgreSQL
     conn = psycopg2.connect(DATABASE_URL)
-    conn.autocommit = False
+    conn.autocommit = True  # ✅ CRITICAL FIX: Enable autocommit for Streamlit
     c = conn.cursor()
     
 except Exception as e:
@@ -165,43 +164,22 @@ except Exception as e:
 
 # ================= SAFE DATABASE EXECUTION =================
 
-def ensure_connection():
-    """Ensure the database connection and cursor are still alive."""
-    global conn, c
-    try:
-        # Dummy execution to test the pulse of the connection
-        c.execute("SELECT 1")
-    except:
-        try:
-            # Re-establish connection if it died
-            DATABASE_URL = st.secrets.get("DATABASE_URL")
-            conn = psycopg2.connect(DATABASE_URL)
-            conn.autocommit = False
-            c = conn.cursor()
-        except Exception as e:
-            st.error(f"Failed to reconnect to database: {e}")
-
 def db_execute(query, params=None):
-    """Safe execution for INSERT, UPDATE, DELETE."""
-    ensure_connection()
+    """Safe execution for INSERT, UPDATE, DELETE with auto-commit"""
     try:
         c.execute(query, params)
-        conn.commit()
+        # No need to commit - autocommit is enabled
         return True, None
     except Exception as e:
-        conn.rollback()
+        st.error(f"Database Error: {e}")
         return False, str(e)
 
 def db_query(query, params=None):
-    """Safe execution for SELECT queries using pandas."""
-    ensure_connection()
+    """Safe execution for SELECT queries - returns pandas DataFrame"""
     try:
-        # Use pandas to read the SQL directly; pass 'conn', not 'c'
         return pd.read_sql_query(query, conn, params=params)
     except Exception as e:
-        if conn:
-            conn.rollback()
-        st.error(f"Database Query Error: {e}") 
+        st.error(f"Database Query Error: {e}")
         return pd.DataFrame()
 # USERS
 try:
@@ -215,10 +193,11 @@ try:
         semester_id INTEGER
     )
     """)
-    conn.commit()
+     if not success:
+         st.error(f"Table creating failed: {error})
     
-except:
-    conn.rollback()
+    
+
 
 # Safe auto-migration for existing users table
 try:
@@ -235,10 +214,8 @@ try:
         name TEXT UNIQUE
     )
     """)
-    conn.commit()
-    
-except:
-    conn.rollback()
+    if not success:
+         st.error(f"Table creating failed: {error})
 
 # SUBJECTS
 try:
@@ -249,10 +226,8 @@ try:
         semester_id INTEGER
     )
     """)
-    conn.commit()
-    
-except:
-    conn.rollback()
+    if not success:
+         st.error(f"Table creating failed: {error})
 
 # ASSIGNMENTS
 try:
@@ -266,18 +241,13 @@ try:
         rubric TEXT
     )
     """)
-    conn.commit()
-    
-except:
-    conn.rollback()
+    if not success:
+         st.error(f"Table creating failed: {error})
 
 # Safe auto-migration for rubric column
 try:
     success,erro = db_execute("ALTER TABLE assignments ADD COLUMN rubric TEXT")
-    conn.commit()
-except:
-    conn.rollback()
-
+    
 # SUBMISSIONS
 try:
     success,erro = db_execute("""
@@ -291,10 +261,8 @@ try:
         ai_summary TEXT
     )
     """)
-    conn.commit()
-    
-except:
-    conn.rollback()
+    if not success:
+         st.error(f"Table creating failed: {error})
 
 # STUDY MATERIALS
 try:
@@ -310,10 +278,8 @@ try:
         uploaded_by INTEGER
     )
     """)
-    conn.commit()
-    
-except:
-    conn.rollback()
+    if not success:
+         st.error(f"Table creating failed: {error})
 
 # ANNOUNCEMENTS
 try:
@@ -328,10 +294,8 @@ try:
         priority TEXT
     )
     """)
-    conn.commit()
-    
-except:
-    conn.rollback()
+    if not success:
+         st.error(f"Table creating failed: {error})
 
 # ================= PASSWORD HELPERS =================
 
@@ -461,33 +425,7 @@ if not st.session_state.logged_in:
     # Prevent the rest of the app from running if not logged in
     st.stop()
 
-# ================= SAFE DATABASE EXECUTION =================
 
-def db_execute(query, params=None):
-    """
-    Safe execution for INSERT, UPDATE, DELETE
-    Automatically commits or rollbacks.
-    """
-    try:
-        success,erro = c.execute(query, params)
-        conn.commit()
-        return True, None
-    except Exception as e:
-        conn.rollback()
-        return False, str(e)
-
-
-def db_query(query, params=None):
-    """
-    Safe execution for SELECT queries.
-    Returns pandas DataFrame.
-    """
-    try:
-        return db_query(query, conn, params=params)
-    except Exception as e:
-        conn.rollback()
-        st.error(f"Database Error: {e}")
-        return pd.DataFrame()
 # ================= SYSTEM & SIDEBAR =================
 
 #check session timeout
