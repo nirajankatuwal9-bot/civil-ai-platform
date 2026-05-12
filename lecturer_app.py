@@ -1,44 +1,64 @@
 import streamlit as st
 import pandas as pd
 import psycopg2
+import subprocess
 from datetime import datetime
 import os
 import re
-import bcrypt
-import time
+from urllib.parse import urlparse
+from pdf2image import convert_from_path
 import io
+import base64
+import bcrypt
+from PIL import Image
+import google.generativeai as genai
+import fitz
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import time
 
-# ==========================================================
-# ================== PAGE CONFIG ===========================
-# ==========================================================
+# ================= CONFIG =================
 
 st.set_page_config(
-    page_title="The N-Streamlines",
+    page_title="The N-streamlines",
     page_icon="🌊",
     layout="wide"
 )
 
-# ==========================================================
-# ================== DATABASE CONNECTION ===================
-# ==========================================================
+# ================= FOLDERS =================
+
+os.makedirs("data", exist_ok=True)
+os.makedirs("assignment_files", exist_ok=True)
+os.makedirs("submission_files", exist_ok=True)
+os.makedirs("study_materials", exist_ok=True)
+
+# ================= DATABASE CONNECTION =================
 
 try:
     DATABASE_URL = st.secrets.get("DATABASE_URL", os.getenv("DATABASE_URL"))
 
     if not DATABASE_URL:
-        st.error("🚨 DATABASE_URL not found in Streamlit Secrets!")
+        st.error("🚨 DATABASE_URL not found!")
         st.stop()
 
     conn = psycopg2.connect(DATABASE_URL)
-    conn.autocommit = False
+    conn.autocommit = True
+    c = conn.cursor()
+
+    # Parse Neon connection for backup system
+    parsed = urlparse(DATABASE_URL)
+    DB_USER = parsed.username
+    DB_PASS = parsed.password
+    DB_HOST = parsed.hostname
+    DB_PORT = parsed.port
+    DB_NAME = parsed.path[1:]
 
 except Exception as e:
     st.error(f"🚨 Database Connection Failed: {e}")
     st.stop()
 
-# ==========================================================
-# ================== DATABASE HELPERS ======================
-# ==========================================================
+# ================= SAFE DATABASE FUNCTIONS =================
 
 def db_query(query, params=None):
     try:
@@ -63,26 +83,29 @@ def db_execute(query, params=None):
         conn.rollback()
         return False, str(e)
 
-# ==========================================================
-# ================== CREATE TABLES =========================
-# ==========================================================
+# ================= TABLE CREATION =================
+
+try:
+    success, error = db_execute("""
+        CREATE TABLE IF NOT EXISTS users(
+            id SERIAL PRIMARY KEY,
+            full_name TEXT,
+            username TEXT UNIQUE,
+            password TEXT,
+            role TEXT,
+            semester_id INTEGER,
+            email TEXT
+        )
+    """)
+    if not success:
+        st.error(f"Users table error: {error}")
+except Exception as e:
+    st.error(f"Users table creation failed: {e}")
 
 db_execute("""
 CREATE TABLE IF NOT EXISTS semesters(
     id SERIAL PRIMARY KEY,
     name TEXT UNIQUE
-)
-""")
-
-db_execute("""
-CREATE TABLE IF NOT EXISTS users(
-    id SERIAL PRIMARY KEY,
-    full_name TEXT,
-    username TEXT UNIQUE,
-    password TEXT,
-    role TEXT,
-    semester_id INTEGER,
-    email TEXT
 )
 """)
 
@@ -118,18 +141,6 @@ CREATE TABLE IF NOT EXISTS submissions(
 """)
 
 db_execute("""
-CREATE TABLE IF NOT EXISTS announcements(
-    id SERIAL PRIMARY KEY,
-    title TEXT,
-    message TEXT,
-    semester_id INTEGER,
-    created_by INTEGER,
-    created_at TEXT,
-    priority TEXT
-)
-""")
-
-db_execute("""
 CREATE TABLE IF NOT EXISTS study_materials(
     id SERIAL PRIMARY KEY,
     title TEXT,
@@ -142,9 +153,19 @@ CREATE TABLE IF NOT EXISTS study_materials(
 )
 """)
 
-# ==========================================================
-# ================== PASSWORD HELPERS ======================
-# ==========================================================
+db_execute("""
+CREATE TABLE IF NOT EXISTS announcements(
+    id SERIAL PRIMARY KEY,
+    title TEXT,
+    message TEXT,
+    semester_id INTEGER,
+    created_by INTEGER,
+    created_at TEXT,
+    priority TEXT
+)
+""")
+
+# ================= PASSWORD HELPERS =================
 
 def hash_password(p):
     return bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
@@ -155,29 +176,28 @@ def check_password(p, hashed):
     except:
         return False
 
-# ==========================================================
-# ================== DEFAULT ADMIN =========================
-# ==========================================================
+# ================= DEFAULT ADMIN =================
 
-admin_check = db_query(
+admin_exists = db_query(
     "SELECT * FROM users WHERE username=%s",
     params=("admin",)
 )
 
-if admin_check.empty:
-    db_execute("""
-        INSERT INTO users(full_name, username, password, role)
-        VALUES(%s,%s,%s,%s)
+if admin_exists.empty:
+    success, erro = db_execute("""
+        INSERT INTO users(full_name, username, password, role, semester_id)
+        VALUES(%s,%s,%s,%s,%s)
     """, (
         "Administrator",
         "admin",
         hash_password("admin123"),
-        "lecturer"
+        "lecturer",
+        None
     ))
+    if not success:
+        st.error(f"Failed to create admin user: {erro}")
 
-# ==========================================================
-# ================== SESSION CONTROL =======================
-# ==========================================================
+# ================= SESSION =================
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -185,58 +205,31 @@ if "logged_in" not in st.session_state:
     st.session_state.role = None
     st.session_state.username = None
 
-SESSION_TIMEOUT = 1800
-
-def check_session_timeout():
-    if "last_activity" not in st.session_state:
-        st.session_state.last_activity = time.time()
-        return True
-
-    if time.time() - st.session_state.last_activity > SESSION_TIMEOUT:
-        return False
-
-    st.session_state.last_activity = time.time()
-    return True
-
-def require_login():
-    if not st.session_state.get("logged_in"):
-        st.error("🔒 Please login")
-        st.stop()
-
-    if not check_session_timeout():
-        st.warning("⏰ Session expired")
-        st.session_state.clear()
-        st.stop()
-
-# ==========================================================
-# ================== LOGIN SYSTEM ==========================
-# ==========================================================
+# ================= LOGIN =================
 
 if not st.session_state.logged_in:
 
-    st.title("🌊 THE N-STREAMLINES")
+    st.markdown("## 🌊 THE N-STREAMLINES")
 
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    user = st.text_input("Username")
+    pw = st.text_input("Password", type="password")
 
-    if st.button("Login"):
-
-        user_data = db_query(
+    if st.button("Enter the Flow"):
+        res = db_query(
             "SELECT * FROM users WHERE username=%s",
-            params=(username,)
+            params=(user,)
         )
 
-        if not user_data.empty:
-            stored_pw = user_data.iloc[0]["password"]
+        if not res.empty:
+            stored_password = res.iloc[0]["password"]
 
-            if check_password(password, stored_pw):
+            if check_password(pw, stored_password):
                 st.session_state.logged_in = True
-                st.session_state.user_id = int(user_data.iloc[0]["id"])
-                st.session_state.role = user_data.iloc[0]["role"]
-                st.session_state.username = user_data.iloc[0]["username"]
-                st.session_state.semester_id = user_data.iloc[0]["semester_id"]
-                st.session_state.last_activity = time.time()
-                st.success("✅ Login Successful")
+                st.session_state.user_id = int(res.iloc[0]["id"])
+                st.session_state.role = res.iloc[0]["role"]
+                st.session_state.username = res.iloc[0]["username"]
+                st.session_state.semester_id = res.iloc[0]["semester_id"]
+                st.success("✅ Login successful!")
                 st.rerun()
             else:
                 st.error("Invalid credentials")
@@ -245,305 +238,294 @@ if not st.session_state.logged_in:
 
     st.stop()
 
-# ==========================================================
-# ================== BACKUP SYSTEM (OPTION 1) ==============
-# ==========================================================
+# ================= SYSTEM & SIDEBAR =================
 
-def create_database_backup():
-
-    backup_dir = "data/backups"
-    os.makedirs(backup_dir, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"backup_{timestamp}.sql"
-    path = os.path.join(backup_dir, filename)
-
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            tables = ["users", "semesters", "subjects", "assignments",
-                      "submissions", "announcements", "study_materials"]
-
-            for table in tables:
-                df = db_query(f"SELECT * FROM {table}")
-                if not df.empty:
-                    f.write(f"-- Data for table {table}\n")
-                    for _, row in df.iterrows():
-                        values = []
-                        for val in row:
-                            if val is None:
-                                values.append("NULL")
-                            else:
-                                escaped = str(val).replace("'", "''")
-                                values.append(f"'{escaped}'")
-                        insert = f"INSERT INTO {table} VALUES ({', '.join(values)});\n"
-                        f.write(insert)
-                    f.write("\n")
-
-        return True, f"Backup created: {filename}"
-
-    except Exception as e:
-        return False, str(e)
-# ==========================================================
-# ================== SIDEBAR ===============================
-# ==========================================================
+require_login()
 
 with st.sidebar:
-    st.write(f"👤 {st.session_state.username}")
-    st.write(f"Role: {st.session_state.role}")
-
-    if st.button("Logout"):
+    st.write(f"👤 **{st.session_state.username}** ({str(st.session_state.role).capitalize()})")
+    st.divider()
+    
+    if st.button("Logout", use_container_width=True):
         st.session_state.clear()
         st.rerun()
 
-    st.divider()
+    if st.session_state.role == "lecturer":
+        with st.expander("⚙️ Danger Zone"):
+            if st.button("🧨 Wipe Database", use_container_width=True):
+                tables = ["users", "submissions", "assignments", "subjects", "semesters", "study_materials", "announcements"]
+                for t in tables: 
+                    db_execute(f"DROP TABLE IF EXISTS {t} CASCADE")
+                st.rerun()
 
-    if st.button("📦 Create Backup"):
-        success, msg = create_database_backup()
-        if success:
-            st.success(msg)
-        else:
-            st.error(msg)
+    st.markdown("<br><br><br><br>", unsafe_allow_html=True)
+    st.markdown("""
+        <div style='text-align: center; padding: 15px; background-color: #ffffff; border: 1px solid #e1e4e8; border-radius: 10px; border-top: 4px solid #004b87;'>
+            <h4 style='color: #004b87; margin-bottom: 5px;'>🌊 The N-Streamlines</h4>
+            <p style='font-size: 0.85em; color: #555;'>Advanced Hydro-Informatics & Learning Management</p>
+            <p style='font-size: 0.8em;'><strong>Er. Nirajan Katuwal</strong></p>
+        </div>
+    """, unsafe_allow_html=True)
 
-# ==========================================================
-# ================== LECTURER PANEL ========================
-# ==========================================================
+role = st.session_state.role
 
-if st.session_state.role == "lecturer":
+# ================= ANNOUNCEMENTS =================
 
-    tabs = st.tabs([
-        "Dashboard",
-        "Semesters",
-        "Subjects",
-        "Assignments",
-        "Submissions",
-        "Students"
-    ])
+def create_announcement(title, message, semester_id, priority, user_id):
+    try:
+        success, erro = db_execute("""
+            INSERT INTO announcements(title, message, semester_id, created_by, created_at, priority)
+            VALUES(%s,%s,%s,%s,%s,%s)
+        """, (
+            title.strip(),
+            message.strip(),
+            int(semester_id) if semester_id else None,
+            int(user_id),
+            str(datetime.now()),
+            priority
+        ))
+        return success, "Announcement created successfully" if success else erro
+    except Exception as e:
+        return False, str(e)
 
-    # ================= DASHBOARD =================
-    with tabs[0]:
 
-        st.title("📊 Dashboard")
-
-        semester_count = db_query("SELECT COUNT(*) as count FROM semesters").iloc[0]["count"]
-        student_count = db_query("SELECT COUNT(*) as count FROM users WHERE role='student'").iloc[0]["count"]
-        assignment_count = db_query("SELECT COUNT(*) as count FROM assignments").iloc[0]["count"]
-        submission_count = db_query("SELECT COUNT(*) as count FROM submissions").iloc[0]["count"]
-
-        col1, col2, col3, col4 = st.columns(4)
-
-        col1.metric("Semesters", semester_count)
-        col2.metric("Students", student_count)
-        col3.metric("Assignments", assignment_count)
-        col4.metric("Submissions", submission_count)
-
-    # ================= SEMESTERS =================
-    with tabs[1]:
-
-        st.title("🎓 Semester Management")
-
-        new_sem = st.text_input("New Semester Name")
-
-        if st.button("Add Semester"):
-            if new_sem.strip():
-                success, err = db_execute(
-                    "INSERT INTO semesters(name) VALUES(%s)",
-                    params=(new_sem.strip(),)
-                )
-                if success:
-                    st.success("Semester added")
-                    st.rerun()
-                else:
-                    st.error(err)
-
-        st.divider()
-
-        semesters = db_query("SELECT * FROM semesters ORDER BY name")
-
-        if not semesters.empty:
-            st.dataframe(semesters, use_container_width=True)
-
-    # ================= SUBJECTS =================
-    with tabs[2]:
-
-        st.title("📚 Subject Management")
-
-        sems = db_query("SELECT * FROM semesters ORDER BY name")
-
-        if sems.empty:
-            st.warning("Create semester first")
-        else:
-            sem_name = st.selectbox("Select Semester", sems["name"])
-            sem_id = int(sems[sems["name"] == sem_name]["id"].values[0])
-
-            subject_name = st.text_input("New Subject")
-
-            if st.button("Add Subject"):
-                success, err = db_execute(
-                    "INSERT INTO subjects(name, semester_id) VALUES(%s,%s)",
-                    params=(subject_name.strip(), sem_id)
-                )
-                if success:
-                    st.success("Subject added")
-                    st.rerun()
-                else:
-                    st.error(err)
-
-            st.divider()
-
-            subjects = db_query(
-                "SELECT * FROM subjects WHERE semester_id=%s",
-                params=(sem_id,)
-            )
-
-            if not subjects.empty:
-                st.dataframe(subjects, use_container_width=True)
-
-    # ================= ASSIGNMENTS =================
-    with tabs[3]:
-
-        st.title("📝 Assignment Management")
-
-        sems = db_query("SELECT * FROM semesters ORDER BY name")
-
-        if sems.empty:
-            st.warning("Create semester first")
-        else:
-            sem_name = st.selectbox("Semester", sems["name"])
-            sem_id = int(sems[sems["name"] == sem_name]["id"].values[0])
-
-            subjects = db_query(
-                "SELECT * FROM subjects WHERE semester_id=%s",
-                params=(sem_id,)
-            )
-
-            if subjects.empty:
-                st.warning("Create subject first")
-            else:
-                subject_name = st.selectbox("Subject", subjects["name"])
-                subject_id = int(subjects[subjects["name"] == subject_name]["id"].values[0])
-
-                title = st.text_input("Assignment Title")
-                deadline = st.date_input("Deadline")
-                rubric = st.text_area("Rubric / Model Answer")
-
-                if st.button("Create Assignment"):
-                    success, err = db_execute("""
-                        INSERT INTO assignments(title, subject_id, deadline, rubric)
-                        VALUES(%s,%s,%s,%s)
-                    """, params=(title.strip(), subject_id, str(deadline), rubric.strip()))
-
-                    if success:
-                        st.success("Assignment created")
-                        st.rerun()
-                    else:
-                        st.error(err)
-
-            st.divider()
-
-            assignments = db_query("""
-                SELECT assignments.id, assignments.title, assignments.deadline,
-                       subjects.name as subject
-                FROM assignments
-                JOIN subjects ON assignments.subject_id = subjects.id
-                ORDER BY assignments.deadline DESC
-            """)
-
-            if not assignments.empty:
-                st.dataframe(assignments, use_container_width=True)
-
-    # ================= SUBMISSIONS =================
-    with tabs[4]:
-
-        st.title("📤 Submissions")
-
-        submissions = db_query("""
-            SELECT users.username,
-                   assignments.title,
-                   submissions.marks,
-                   submissions.submission_time
-            FROM submissions
-            JOIN users ON submissions.student_id = users.id
-            JOIN assignments ON submissions.assignment_id = assignments.id
-            ORDER BY submissions.submission_time DESC
+def get_announcements_for_semester(semester_id=None):
+    if semester_id:
+        return db_query("""
+            SELECT announcements.*, users.full_name as author, semesters.name as semester
+            FROM announcements
+            LEFT JOIN users ON announcements.created_by = users.id
+            LEFT JOIN semesters ON announcements.semester_id = semesters.id
+            WHERE announcements.semester_id=%s OR announcements.semester_id IS NULL
+            ORDER BY announcements.created_at DESC
+        """, params=(int(semester_id),))
+    else:
+        return db_query("""
+            SELECT announcements.*, users.full_name as author, semesters.name as semester
+            FROM announcements
+            LEFT JOIN users ON announcements.created_by = users.id
+            LEFT JOIN semesters ON announcements.semester_id = semesters.id
+            ORDER BY announcements.created_at DESC
         """)
 
-        if submissions.empty:
-            st.info("No submissions yet")
-        else:
-            st.dataframe(submissions, use_container_width=True)
+# ================= EMAIL SYSTEM =================
 
-    # ================= STUDENTS =================
-    with tabs[5]:
+def send_email_notification(target_semester_id, subject, message_body):
+    if target_semester_id:
+        df = db_query(
+            "SELECT email FROM users WHERE role='student' AND semester_id=%s AND email IS NOT NULL AND email <> ''",
+            params=(int(target_semester_id),)
+        )
+    else:
+        df = db_query(
+            "SELECT email FROM users WHERE role='student' AND email IS NOT NULL AND email <> ''"
+        )
 
-        st.title("👥 Student Management")
+    emails = df['email'].tolist()
+    if not emails:
+        return False, "No valid student emails found."
 
-        sems = db_query("SELECT * FROM semesters ORDER BY name")
+    SENDER_EMAIL = st.secrets["EMAIL_USER"]
+    APP_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 
-        if sems.empty:
-            st.warning("Create semester first")
-        else:
-            sem_name = st.selectbox("Assign Semester", sems["name"])
-            sem_id = int(sems[sems["name"] == sem_name]["id"].values[0])
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = f"The N-Streamlines <{SENDER_EMAIL}>"
+        msg['Subject'] = subject
+        msg.attach(MIMEText(message_body, 'plain'))
+        
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(SENDER_EMAIL, APP_PASSWORD)
+        server.sendmail(SENDER_EMAIL, emails, msg.as_string())
+        server.quit()
 
-            full_name = st.text_input("Full Name")
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
+        return True, f"Emailed {len(emails)} students."
+    except Exception as e:
+        return False, str(e)
 
-            if st.button("Create Student"):
-                success, err = db_execute("""
-                    INSERT INTO users(full_name, username, password, role, semester_id)
-                    VALUES(%s,%s,%s,%s,%s)
-                """, params=(
-                    full_name.strip(),
-                    username.strip(),
-                    hash_password(password.strip()),
-                    "student",
-                    sem_id
-                ))
+# ================= BACKUP SYSTEM =================
 
-                if success:
-                    st.success("Student created")
-                    st.rerun()
-                else:
-                    st.error(err)
+def create_database_backup():
+    try:
+        backup_dir = "data/backups"
+        os.makedirs(backup_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_filename = f"lecturer_backup_{timestamp}.sql"
+        backup_path = os.path.join(backup_dir, backup_filename)
 
-        st.divider()
+        env = os.environ.copy()
+        env["PGPASSWORD"] = DB_PASS
 
-        students = db_query("""
-            SELECT users.id, users.full_name, users.username,
-                   semesters.name as semester
+        result = subprocess.run(
+            ["pg_dump", "-U", DB_USER, "-h", DB_HOST, "-p", str(DB_PORT), "-d", DB_NAME, "-f", backup_path],
+            env=env, capture_output=True, text=True
+        )
+
+        if result.returncode != 0:
+            return False, result.stderr
+
+        return True, f"Backup created: {backup_filename}"
+    except Exception as e:
+        return False, str(e)
+
+def get_backup_list():
+    backup_dir = "data/backups"
+    backups = []
+    if not os.path.exists(backup_dir):
+        return backups
+
+    for filename in os.listdir(backup_dir):
+        if filename.endswith(".sql"):
+            file_path = os.path.join(backup_dir, filename)
+            backups.append({
+                "filename": filename,
+                "path": file_path,
+                "size_kb": round(os.path.getsize(file_path)/1024,2),
+                "date": datetime.fromtimestamp(os.path.getmtime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
+            })
+
+    backups.sort(key=lambda x: x["date"], reverse=True)
+    return backups
+
+# ================= SEARCH FUNCTIONS =================
+
+def search_students(query, semester_id=None):
+    query = query.strip().lower()
+    if not query:
+        return pd.DataFrame()
+
+    if semester_id:
+        return db_query("""
+            SELECT users.id, users.full_name, users.username, semesters.name as semester
             FROM users
             LEFT JOIN semesters ON users.semester_id = semesters.id
             WHERE users.role='student'
-            ORDER BY users.full_name
-        """)
+            AND users.semester_id=%s
+            AND (LOWER(users.full_name) LIKE %s OR LOWER(users.username) LIKE %s)
+            ORDER BY users.full_name ASC
+        """, params=(semester_id, f"%{query}%", f"%{query}%"))
+    else:
+        return db_query("""
+            SELECT users.id, users.full_name, users.username, semesters.name as semester
+            FROM users
+            LEFT JOIN semesters ON users.semester_id = semesters.id
+            WHERE users.role='student'
+            AND (LOWER(users.full_name) LIKE %s OR LOWER(users.username) LIKE %s)
+            ORDER BY users.full_name ASC
+        """, params=(f"%{query}%", f"%{query}%"))
 
-        if not students.empty:
-            st.dataframe(students, use_container_width=True)
 # ==========================================================
-# ================== STUDENT PANEL =========================
+# ===================== STUDENT =============================
 # ==========================================================
 
-elif st.session_state.role == "student":
+elif role == "student":
 
-    tabs = st.tabs(["My Assignments", "Study Materials", "My Results"])
+    tabs = st.tabs(["Assignments", "Study Materials", "My Results"])
 
-    # ================= MY ASSIGNMENTS =================
+    # ================= ASSIGNMENTS =================
     with tabs[0]:
 
         st.title("📝 My Assignments")
 
-        # Get student semester
+        # Get student's semester
         student_info = db_query(
             "SELECT semester_id FROM users WHERE id=%s",
             params=(int(st.session_state.user_id),)
         )
 
-        if student_info.empty or student_info.iloc[0]["semester_id"] is None:
-            st.warning("You are not assigned to a semester.")
+        if student_info.empty:
+            st.error("Student record not found.")
             st.stop()
 
-        sem_id = int(student_info.iloc[0]["semester_id"])
+        sem_id_raw = student_info.iloc[0]["semester_id"]
+
+        if sem_id_raw is None:
+            st.warning("You are not assigned to a semester. Please contact your Lecturer.")
+            st.stop()
+
+        sem_id = int(sem_id_raw)
+
+        # Load announcements
+        announcements = get_announcements_for_semester(sem_id)
+
+        if not announcements.empty:
+            st.subheader("📢 Announcements")
+            for _, ann in announcements.iterrows():
+                if ann['priority'] == 'Urgent':
+                    color = '#ff4444'
+                    icon = '🚨'
+                elif ann['priority'] == 'Important':
+                    color = '#ff9800'
+                    icon = '⚠️'
+                else:
+                    color = '#4CAF50'
+                    icon = '📢'
+
+                st.markdown(f"""
+                <div style='background-color: {color}22; padding: 15px; border-radius: 8px; 
+                            border-left: 5px solid {color}; margin-bottom: 10px;'>
+                    <h4 style='margin:0; color: white;'>{icon} {ann['title']}</h4>
+                    <p style='color: white; margin: 10px 0;'>{ann['message']}</p>
+                    <small style='color: #f0f0f0;'>Posted by {ann['author']} on {ann['created_at'][:16]}</small>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.divider()
+
+        # Semester name
+        semester_info = db_query(
+            "SELECT name FROM semesters WHERE id=%s",
+            params=(sem_id,)
+        )
+
+        if not semester_info.empty:
+            st.info(f"📚 Semester: **{semester_info.iloc[0]['name']}**")
+
+        # ================= DEADLINE REMINDERS =================
+        st.subheader("⏰ Deadline Reminders")
+
+        all_assignments = db_query("""
+            SELECT assignments.id, assignments.title, assignments.deadline,
+                   subjects.name as subject
+            FROM assignments
+            JOIN subjects ON assignments.subject_id = subjects.id
+            WHERE subjects.semester_id=%s
+            ORDER BY assignments.deadline ASC
+        """, params=(sem_id,))
+
+        if not all_assignments.empty:
+
+            overdue, due_today, due_soon, completed = [], [], [], []
+
+            for _, assignment in all_assignments.iterrows():
+
+                submission = db_query("""
+                    SELECT id FROM submissions
+                    WHERE assignment_id=%s AND student_id=%s
+                """, params=(assignment['id'], st.session_state.user_id))
+
+                days, status, _ = get_deadline_status(assignment['deadline'])
+
+                if not submission.empty:
+                    completed.append(assignment)
+                elif status == "Overdue":
+                    overdue.append(assignment)
+                elif status == "Due Today":
+                    due_today.append(assignment)
+                elif status == "Due Soon":
+                    due_soon.append(assignment)
+
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("🔴 Overdue", len(overdue))
+            col2.metric("🟠 Due Today", len(due_today))
+            col3.metric("🟡 Due Soon", len(due_soon))
+            col4.metric("✅ Completed", len(completed))
+
+            st.divider()
+
+        # ================= ASSIGNMENT LIST =================
+        st.subheader("📋 All Assignments")
 
         assignments = db_query("""
             SELECT assignments.*, subjects.name as subject
@@ -554,63 +536,70 @@ elif st.session_state.role == "student":
         """, params=(sem_id,))
 
         if assignments.empty:
-            st.info("No assignments yet.")
+            st.info("No assignments available.")
         else:
             for _, row in assignments.iterrows():
 
-                submission = db_query("""
+                existing_submission = db_query("""
                     SELECT * FROM submissions
                     WHERE assignment_id=%s AND student_id=%s
-                """, params=(int(row["id"]), int(st.session_state.user_id)))
+                """, params=(row["id"], st.session_state.user_id))
 
-                deadline = datetime.strptime(str(row["deadline"]), "%Y-%m-%d").date()
-                today = datetime.now().date()
-                is_late = today > deadline
+                deadline_display = format_deadline_display(row['deadline'])
 
-                title = f"{row['subject']} - {row['title']} (Due: {row['deadline']})"
+                expander_title = f"{row['subject']} - {row['title']} | {deadline_display}"
+                if not existing_submission.empty:
+                    expander_title = "✅ " + expander_title
 
-                with st.expander(title):
+                with st.expander(expander_title):
 
-                    # Already submitted
-                    if not submission.empty:
+                    # Download question file
+                    if row["question_file"] and os.path.exists(row["question_file"]):
+                        with open(row["question_file"], "rb") as f:
+                            st.download_button(
+                                "📥 Download Assignment Question",
+                                f,
+                                file_name=os.path.basename(row["question_file"])
+                            )
 
-                        st.success("✅ Submitted")
+                    st.divider()
 
-                        sub_time = submission.iloc[0]["submission_time"]
-                        st.write(f"Submitted on: {sub_time}")
+                    # Check deadline
+                    try:
+                        deadline_date = datetime.strptime(row['deadline'], '%Y-%m-%d').date()
+                        is_late = datetime.now().date() > deadline_date
+                    except:
+                        is_late = False
 
-                        marks = submission.iloc[0]["marks"]
-                        if marks and str(marks).strip():
-                            st.metric("Marks", f"{marks}/10")
+                    if not existing_submission.empty:
+                        st.success("✅ Already Submitted")
+
+                        marks = existing_submission.iloc[0]["marks"]
+                        if marks:
+                            st.metric("🎯 Marks", f"{marks}/10")
                         else:
                             st.info("Not graded yet")
 
-                    # Deadline passed
                     elif is_late:
-                        st.error("🔒 Deadline passed. Submission locked.")
+                        st.error("🔒 Deadline Locked")
 
-                    # Submission open
                     else:
                         uploaded = st.file_uploader(
-                            "Upload PDF",
+                            "Upload Your Answer PDF",
                             type=["pdf"],
                             key=f"upload_{row['id']}"
                         )
 
-                        if st.button("Submit", key=f"submit_{row['id']}"):
-
+                        if st.button("Submit Assignment", key=f"submit_{row['id']}"):
                             if not uploaded:
-                                st.warning("Upload a PDF first.")
+                                st.warning("Upload PDF first.")
                             else:
-                                os.makedirs("submission_files", exist_ok=True)
-
-                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                file_path = f"submission_files/{st.session_state.username}_{row['id']}_{timestamp}.pdf"
+                                file_path = f"submission_files/{st.session_state.username}_{row['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
 
                                 with open(file_path, "wb") as f:
                                     f.write(uploaded.getbuffer())
 
-                                success, err = db_execute("""
+                                c.execute("""
                                     INSERT INTO submissions(
                                         assignment_id,
                                         student_id,
@@ -620,89 +609,64 @@ elif st.session_state.role == "student":
                                         ai_summary
                                     )
                                     VALUES(%s,%s,%s,%s,%s,%s)
-                                """, params=(
-                                    int(row["id"]),
-                                    int(st.session_state.user_id),
+                                """, (
+                                    row["id"],
+                                    st.session_state.user_id,
                                     str(datetime.now()),
                                     file_path,
                                     "",
                                     ""
                                 ))
 
-                                if success:
-                                    st.success("✅ Submitted successfully")
-                                    st.balloons()
-                                    st.rerun()
-                                else:
-                                    st.error(err)
+                                conn.commit()
+                                st.success("✅ Submitted successfully!")
+                                st.rerun()
 
     # ================= STUDY MATERIALS =================
     with tabs[1]:
 
         st.title("📚 Study Materials")
 
-        student_info = db_query(
-            "SELECT semester_id FROM users WHERE id=%s",
-            params=(int(st.session_state.user_id),)
-        )
-
-        if student_info.empty or student_info.iloc[0]["semester_id"] is None:
-            st.warning("No semester assigned.")
-            st.stop()
-
-        sem_id = int(student_info.iloc[0]["semester_id"])
-
         materials = db_query("""
             SELECT study_materials.title,
+                   subjects.name as subject,
                    study_materials.file_path,
                    study_materials.upload_date,
-                   subjects.name as subject
+                   study_materials.description
             FROM study_materials
             JOIN subjects ON study_materials.subject_id = subjects.id
             WHERE study_materials.semester_id=%s
-            ORDER BY subjects.name, study_materials.upload_date DESC
+            ORDER BY subjects.name ASC
         """, params=(sem_id,))
 
         if materials.empty:
-            st.info("No study materials yet.")
+            st.info("No materials available.")
         else:
-            for _, row in materials.iterrows():
+            for _, material in materials.iterrows():
+                with st.expander(f"{material['subject']} - {material['title']}"):
+                    st.write(f"Uploaded: {material['upload_date']}")
+                    if material['description']:
+                        st.info(material['description'])
 
-                with st.expander(f"{row['subject']} - {row['title']}"):
-
-                    st.write(f"Uploaded: {row['upload_date']}")
-
-                    if row["file_path"] and os.path.exists(row["file_path"]):
-                        with open(row["file_path"], "rb") as f:
+                    if material['file_path'] and os.path.exists(material['file_path']):
+                        with open(material['file_path'], "rb") as f:
                             st.download_button(
                                 "Download",
                                 f,
-                                file_name=os.path.basename(row["file_path"])
+                                file_name=os.path.basename(material['file_path'])
                             )
-                    else:
-                        st.error("File not found")
 
-    # ================= MY RESULTS =================
+    # ================= RESULTS =================
     with tabs[2]:
 
-        st.title("📊 My Results")
+        st.subheader("📝 My Academic Performance Record")
 
-        student_info = db_query(
-            "SELECT semester_id FROM users WHERE id=%s",
-            params=(int(st.session_state.user_id),)
-        )
-
-        if student_info.empty or student_info.iloc[0]["semester_id"] is None:
-            st.warning("No semester assigned.")
-            st.stop()
-
-        sem_id = int(student_info.iloc[0]["semester_id"])
-
-        results = db_query("""
-            SELECT subjects.name as subject,
-                   assignments.title,
-                   assignments.deadline,
-                   submissions.marks
+        results_df = db_query("""
+            SELECT subjects.name as Subject,
+                   assignments.title as Assignment,
+                   assignments.deadline as Deadline,
+                   submissions.marks as Marks,
+                   submissions.submission_time as Submitted_On
             FROM assignments
             JOIN subjects ON assignments.subject_id = subjects.id
             LEFT JOIN submissions
@@ -710,33 +674,30 @@ elif st.session_state.role == "student":
                 AND submissions.student_id=%s
             WHERE subjects.semester_id=%s
             ORDER BY assignments.deadline DESC
-        """, params=(int(st.session_state.user_id), sem_id))
+        """, params=(st.session_state.user_id, sem_id))
 
-        if results.empty:
+        if results_df.empty:
             st.info("No assignments yet.")
         else:
-
-            display = []
-
+            display_data = []
             today = datetime.now().date()
 
-            for _, row in results.iterrows():
+            for _, row in results_df.iterrows():
+                deadline_date = datetime.strptime(row['Deadline'], '%Y-%m-%d').date()
+                marks = row['Marks']
 
-                deadline = datetime.strptime(str(row["deadline"]), "%Y-%m-%d").date()
-                marks = row["marks"]
-
-                if marks and str(marks).strip():
+                if row['Submitted_On'] and marks:
                     status = f"✅ Graded ({marks}/10)"
-                elif today > deadline:
-                    status = "❌ Missed (0/10)"
+                elif today > deadline_date:
+                    status = "❌ MISSED (Negligence)"
                 else:
-                    status = "📖 Open"
+                    status = "📖 Open for Submission"
 
-                display.append({
-                    "Subject": row["subject"],
-                    "Assignment": row["title"],
-                    "Deadline": row["deadline"],
+                display_data.append({
+                    "Subject": row['Subject'],
+                    "Assignment": row['Assignment'],
+                    "Deadline": row['Deadline'],
                     "Status": status
                 })
 
-            st.dataframe(pd.DataFrame(display), use_container_width=True)
+            st.dataframe(pd.DataFrame(display_data), use_container_width=True)
