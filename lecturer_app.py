@@ -1709,12 +1709,12 @@ if role == "lecturer":
             if view_filter == "All":
                 all_assignments = pd.read_sql_query("""
                 SELECT 
-                    assignments.id as ID,
-                    assignments.title as Title,
-                    subjects.name as Subject,
-                    semesters.name as Semester,
-                    assignments.deadline as Deadline,
-                    assignments.question_file as File
+                    assignments.id as "ID",
+                    assignments.title as "Title",
+                    subjects.name as "Subject",
+                    semesters.name as "Semester",
+                    assignments.deadline as "Deadline",
+                    assignments.question_file as "File"
                 FROM assignments
                 JOIN subjects ON assignments.subject_id = subjects.id
                 JOIN semesters ON subjects.semester_id = semesters.id
@@ -1724,12 +1724,12 @@ if role == "lecturer":
                 filter_sem_id = int(view_sems[view_sems["name"] == view_filter]["id"].values[0])
                 all_assignments = pd.read_sql_query("""
                 SELECT 
-                    assignments.id as ID,
-                    assignments.title as Title,
-                    subjects.name as Subject,
-                    semesters.name as Semester,
-                    assignments.deadline as Deadline,
-                    assignments.question_file as File
+                    assignments.id as "ID",
+                    assignments.title as "Title",
+                    subjects.name as "Subject",
+                    semesters.name as "Semester",
+                    assignments.deadline as "Deadline",
+                    assignments.question_file as "File"
                 FROM assignments
                 JOIN subjects ON assignments.subject_id = subjects.id
                 JOIN semesters ON subjects.semester_id = semesters.id
@@ -2083,15 +2083,15 @@ if role == "lecturer":
             if selected_sem == "All":
                 df = pd.read_sql_query("""
                 SELECT 
-                    semesters.name as Semester,
-                    subjects.name as Subject,
-                    assignments.title as Assignment,
-                    users.full_name as Student_Name,
-                    users.username as Username,
-                    submissions.submission_time as Submission_Date,
-                    assignments.deadline as Deadline,
-                    submissions.marks as Marks,
-                    submissions.ai_summary as AI_Feedback
+                    semesters.name as "Semester",
+                    subjects.name as "Subject",
+                    assignments.title as "Assignment",
+                    users.full_name as "Student_Name",
+                    users.username as "Username",
+                    submissions.submission_time as "Submission_Date",
+                    assignments.deadline as "Deadline",
+                    submissions.marks as "Marks",
+                    submissions.ai_summary as "AI_Feedback"
                 FROM submissions
                 JOIN assignments ON submissions.assignment_id=assignments.id
                 JOIN subjects ON assignments.subject_id = subjects.id
@@ -2104,15 +2104,15 @@ if role == "lecturer":
                 sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
                 df = pd.read_sql_query("""
                 SELECT 
-                    semesters.name as Semester,
-                    subjects.name as Subject,
-                    assignments.title as Assignment,
-                    users.full_name as Student_Name,
-                    users.username as Username,
-                    submissions.submission_time as Submission_Date,
-                    assignments.deadline as Deadline,
-                    submissions.marks as Marks,
-                    submissions.ai_summary as AI_Feedback
+                    semesters.name as "Semester",
+                    subjects.name as "Subject",
+                    assignments.title as "Assignment",
+                    users.full_name as "Student_Name",
+                    users.username as "Username",
+                    submissions.submission_time as "Submission_Date",
+                    assignments.deadline as "Deadline",
+                    submissions.marks as "Marks",
+                    submissions.ai_summary as "AI_Feedback"
                 FROM submissions
                 JOIN assignments ON submissions.assignment_id=assignments.id
                 JOIN subjects ON assignments.subject_id = subjects.id
@@ -2402,10 +2402,10 @@ if role == "lecturer":
         if list_filter == "All":
             students_df = pd.read_sql_query("""
                 SELECT 
-                    users.id as ID,
-                    users.full_name as Name, 
-                    users.username as Username, 
-                    COALESCE(semesters.name, 'No Semester') as Semester
+                    users.id as "ID",
+                    users.full_name as "Name", 
+                    users.username as "Username", 
+                    COALESCE(semesters.name, 'No Semester') as "Semester"
                 FROM users 
                 LEFT JOIN semesters ON users.semester_id = semesters.id 
                 WHERE users.role='student' 
@@ -2414,10 +2414,10 @@ if role == "lecturer":
         else:
             students_df = pd.read_sql_query("""
                 SELECT 
-                    users.id as ID,
-                    users.full_name as Name, 
-                    users.username as Username, 
-                    semesters.name as Semester
+                    users.id as "ID",
+                    users.full_name as "Name", 
+                    users.username as "Username", 
+                    semesters.name as "Semester"
                 FROM users 
                 JOIN semesters ON users.semester_id = semesters.id 
                 WHERE users.role='student' AND semesters.name = %s
