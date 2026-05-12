@@ -1801,8 +1801,12 @@ if role == "lecturer":
         filter_col1, filter_col2 = st.columns([1, 2])
         
         with filter_col1:
-            list_filter = st.selectbox("View Students by Semester", ["All"] + all_sems_list["name"].tolist(), key="view_filter")
-
+            if not all_sems_list.empty:
+                semester_options = ["All"] + all_sems_list["name"].tolist()
+            else:
+                semester_options = ["All"]
+                list_filter = st.selectbox("View Students by Semester", semester_options, key="view_filter")
+                
         # 2. Build Query: Sorted by Semester, then Alphabetically by Name
         if list_filter == "All":
             students_df = db_query("""
@@ -1815,7 +1819,7 @@ if role == "lecturer":
                 LEFT JOIN semesters ON users.semester_id = semesters.id 
                 WHERE users.role='student' 
                 ORDER BY semesters.name ASC, users.full_name ASC
-            """, conn)
+            """,)
         else:
             students_df = db_query("""
                 SELECT 
