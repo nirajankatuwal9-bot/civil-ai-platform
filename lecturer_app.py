@@ -283,3 +283,460 @@ def create_database_backup():
 
     except Exception as e:
         return False, str(e)
+# ==========================================================
+# ================== SIDEBAR ===============================
+# ==========================================================
+
+with st.sidebar:
+    st.write(f"👤 {st.session_state.username}")
+    st.write(f"Role: {st.session_state.role}")
+
+    if st.button("Logout"):
+        st.session_state.clear()
+        st.rerun()
+
+    st.divider()
+
+    if st.button("📦 Create Backup"):
+        success, msg = create_database_backup()
+        if success:
+            st.success(msg)
+        else:
+            st.error(msg)
+
+# ==========================================================
+# ================== LECTURER PANEL ========================
+# ==========================================================
+
+if st.session_state.role == "lecturer":
+
+    tabs = st.tabs([
+        "Dashboard",
+        "Semesters",
+        "Subjects",
+        "Assignments",
+        "Submissions",
+        "Students"
+    ])
+
+    # ================= DASHBOARD =================
+    with tabs[0]:
+
+        st.title("📊 Dashboard")
+
+        semester_count = db_query("SELECT COUNT(*) as count FROM semesters").iloc[0]["count"]
+        student_count = db_query("SELECT COUNT(*) as count FROM users WHERE role='student'").iloc[0]["count"]
+        assignment_count = db_query("SELECT COUNT(*) as count FROM assignments").iloc[0]["count"]
+        submission_count = db_query("SELECT COUNT(*) as count FROM submissions").iloc[0]["count"]
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        col1.metric("Semesters", semester_count)
+        col2.metric("Students", student_count)
+        col3.metric("Assignments", assignment_count)
+        col4.metric("Submissions", submission_count)
+
+    # ================= SEMESTERS =================
+    with tabs[1]:
+
+        st.title("🎓 Semester Management")
+
+        new_sem = st.text_input("New Semester Name")
+
+        if st.button("Add Semester"):
+            if new_sem.strip():
+                success, err = db_execute(
+                    "INSERT INTO semesters(name) VALUES(%s)",
+                    params=(new_sem.strip(),)
+                )
+                if success:
+                    st.success("Semester added")
+                    st.rerun()
+                else:
+                    st.error(err)
+
+        st.divider()
+
+        semesters = db_query("SELECT * FROM semesters ORDER BY name")
+
+        if not semesters.empty:
+            st.dataframe(semesters, use_container_width=True)
+
+    # ================= SUBJECTS =================
+    with tabs[2]:
+
+        st.title("📚 Subject Management")
+
+        sems = db_query("SELECT * FROM semesters ORDER BY name")
+
+        if sems.empty:
+            st.warning("Create semester first")
+        else:
+            sem_name = st.selectbox("Select Semester", sems["name"])
+            sem_id = int(sems[sems["name"] == sem_name]["id"].values[0])
+
+            subject_name = st.text_input("New Subject")
+
+            if st.button("Add Subject"):
+                success, err = db_execute(
+                    "INSERT INTO subjects(name, semester_id) VALUES(%s,%s)",
+                    params=(subject_name.strip(), sem_id)
+                )
+                if success:
+                    st.success("Subject added")
+                    st.rerun()
+                else:
+                    st.error(err)
+
+            st.divider()
+
+            subjects = db_query(
+                "SELECT * FROM subjects WHERE semester_id=%s",
+                params=(sem_id,)
+            )
+
+            if not subjects.empty:
+                st.dataframe(subjects, use_container_width=True)
+
+    # ================= ASSIGNMENTS =================
+    with tabs[3]:
+
+        st.title("📝 Assignment Management")
+
+        sems = db_query("SELECT * FROM semesters ORDER BY name")
+
+        if sems.empty:
+            st.warning("Create semester first")
+        else:
+            sem_name = st.selectbox("Semester", sems["name"])
+            sem_id = int(sems[sems["name"] == sem_name]["id"].values[0])
+
+            subjects = db_query(
+                "SELECT * FROM subjects WHERE semester_id=%s",
+                params=(sem_id,)
+            )
+
+            if subjects.empty:
+                st.warning("Create subject first")
+            else:
+                subject_name = st.selectbox("Subject", subjects["name"])
+                subject_id = int(subjects[subjects["name"] == subject_name]["id"].values[0])
+
+                title = st.text_input("Assignment Title")
+                deadline = st.date_input("Deadline")
+                rubric = st.text_area("Rubric / Model Answer")
+
+                if st.button("Create Assignment"):
+                    success, err = db_execute("""
+                        INSERT INTO assignments(title, subject_id, deadline, rubric)
+                        VALUES(%s,%s,%s,%s)
+                    """, params=(title.strip(), subject_id, str(deadline), rubric.strip()))
+
+                    if success:
+                        st.success("Assignment created")
+                        st.rerun()
+                    else:
+                        st.error(err)
+
+            st.divider()
+
+            assignments = db_query("""
+                SELECT assignments.id, assignments.title, assignments.deadline,
+                       subjects.name as subject
+                FROM assignments
+                JOIN subjects ON assignments.subject_id = subjects.id
+                ORDER BY assignments.deadline DESC
+            """)
+
+            if not assignments.empty:
+                st.dataframe(assignments, use_container_width=True)
+
+    # ================= SUBMISSIONS =================
+    with tabs[4]:
+
+        st.title("📤 Submissions")
+
+        submissions = db_query("""
+            SELECT users.username,
+                   assignments.title,
+                   submissions.marks,
+                   submissions.submission_time
+            FROM submissions
+            JOIN users ON submissions.student_id = users.id
+            JOIN assignments ON submissions.assignment_id = assignments.id
+            ORDER BY submissions.submission_time DESC
+        """)
+
+        if submissions.empty:
+            st.info("No submissions yet")
+        else:
+            st.dataframe(submissions, use_container_width=True)
+
+    # ================= STUDENTS =================
+    with tabs[5]:
+
+        st.title("👥 Student Management")
+
+        sems = db_query("SELECT * FROM semesters ORDER BY name")
+
+        if sems.empty:
+            st.warning("Create semester first")
+        else:
+            sem_name = st.selectbox("Assign Semester", sems["name"])
+            sem_id = int(sems[sems["name"] == sem_name]["id"].values[0])
+
+            full_name = st.text_input("Full Name")
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+
+            if st.button("Create Student"):
+                success, err = db_execute("""
+                    INSERT INTO users(full_name, username, password, role, semester_id)
+                    VALUES(%s,%s,%s,%s,%s)
+                """, params=(
+                    full_name.strip(),
+                    username.strip(),
+                    hash_password(password.strip()),
+                    "student",
+                    sem_id
+                ))
+
+                if success:
+                    st.success("Student created")
+                    st.rerun()
+                else:
+                    st.error(err)
+
+        st.divider()
+
+        students = db_query("""
+            SELECT users.id, users.full_name, users.username,
+                   semesters.name as semester
+            FROM users
+            LEFT JOIN semesters ON users.semester_id = semesters.id
+            WHERE users.role='student'
+            ORDER BY users.full_name
+        """)
+
+        if not students.empty:
+            st.dataframe(students, use_container_width=True)
+# ==========================================================
+# ================== STUDENT PANEL =========================
+# ==========================================================
+
+elif st.session_state.role == "student":
+
+    tabs = st.tabs(["My Assignments", "Study Materials", "My Results"])
+
+    # ================= MY ASSIGNMENTS =================
+    with tabs[0]:
+
+        st.title("📝 My Assignments")
+
+        # Get student semester
+        student_info = db_query(
+            "SELECT semester_id FROM users WHERE id=%s",
+            params=(int(st.session_state.user_id),)
+        )
+
+        if student_info.empty or student_info.iloc[0]["semester_id"] is None:
+            st.warning("You are not assigned to a semester.")
+            st.stop()
+
+        sem_id = int(student_info.iloc[0]["semester_id"])
+
+        assignments = db_query("""
+            SELECT assignments.*, subjects.name as subject
+            FROM assignments
+            JOIN subjects ON assignments.subject_id = subjects.id
+            WHERE subjects.semester_id=%s
+            ORDER BY assignments.deadline ASC
+        """, params=(sem_id,))
+
+        if assignments.empty:
+            st.info("No assignments yet.")
+        else:
+            for _, row in assignments.iterrows():
+
+                submission = db_query("""
+                    SELECT * FROM submissions
+                    WHERE assignment_id=%s AND student_id=%s
+                """, params=(int(row["id"]), int(st.session_state.user_id)))
+
+                deadline = datetime.strptime(str(row["deadline"]), "%Y-%m-%d").date()
+                today = datetime.now().date()
+                is_late = today > deadline
+
+                title = f"{row['subject']} - {row['title']} (Due: {row['deadline']})"
+
+                with st.expander(title):
+
+                    # Already submitted
+                    if not submission.empty:
+
+                        st.success("✅ Submitted")
+
+                        sub_time = submission.iloc[0]["submission_time"]
+                        st.write(f"Submitted on: {sub_time}")
+
+                        marks = submission.iloc[0]["marks"]
+                        if marks and str(marks).strip():
+                            st.metric("Marks", f"{marks}/10")
+                        else:
+                            st.info("Not graded yet")
+
+                    # Deadline passed
+                    elif is_late:
+                        st.error("🔒 Deadline passed. Submission locked.")
+
+                    # Submission open
+                    else:
+                        uploaded = st.file_uploader(
+                            "Upload PDF",
+                            type=["pdf"],
+                            key=f"upload_{row['id']}"
+                        )
+
+                        if st.button("Submit", key=f"submit_{row['id']}"):
+
+                            if not uploaded:
+                                st.warning("Upload a PDF first.")
+                            else:
+                                os.makedirs("submission_files", exist_ok=True)
+
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                file_path = f"submission_files/{st.session_state.username}_{row['id']}_{timestamp}.pdf"
+
+                                with open(file_path, "wb") as f:
+                                    f.write(uploaded.getbuffer())
+
+                                success, err = db_execute("""
+                                    INSERT INTO submissions(
+                                        assignment_id,
+                                        student_id,
+                                        submission_time,
+                                        submission_file,
+                                        marks,
+                                        ai_summary
+                                    )
+                                    VALUES(%s,%s,%s,%s,%s,%s)
+                                """, params=(
+                                    int(row["id"]),
+                                    int(st.session_state.user_id),
+                                    str(datetime.now()),
+                                    file_path,
+                                    "",
+                                    ""
+                                ))
+
+                                if success:
+                                    st.success("✅ Submitted successfully")
+                                    st.balloons()
+                                    st.rerun()
+                                else:
+                                    st.error(err)
+
+    # ================= STUDY MATERIALS =================
+    with tabs[1]:
+
+        st.title("📚 Study Materials")
+
+        student_info = db_query(
+            "SELECT semester_id FROM users WHERE id=%s",
+            params=(int(st.session_state.user_id),)
+        )
+
+        if student_info.empty or student_info.iloc[0]["semester_id"] is None:
+            st.warning("No semester assigned.")
+            st.stop()
+
+        sem_id = int(student_info.iloc[0]["semester_id"])
+
+        materials = db_query("""
+            SELECT study_materials.title,
+                   study_materials.file_path,
+                   study_materials.upload_date,
+                   subjects.name as subject
+            FROM study_materials
+            JOIN subjects ON study_materials.subject_id = subjects.id
+            WHERE study_materials.semester_id=%s
+            ORDER BY subjects.name, study_materials.upload_date DESC
+        """, params=(sem_id,))
+
+        if materials.empty:
+            st.info("No study materials yet.")
+        else:
+            for _, row in materials.iterrows():
+
+                with st.expander(f"{row['subject']} - {row['title']}"):
+
+                    st.write(f"Uploaded: {row['upload_date']}")
+
+                    if row["file_path"] and os.path.exists(row["file_path"]):
+                        with open(row["file_path"], "rb") as f:
+                            st.download_button(
+                                "Download",
+                                f,
+                                file_name=os.path.basename(row["file_path"])
+                            )
+                    else:
+                        st.error("File not found")
+
+    # ================= MY RESULTS =================
+    with tabs[2]:
+
+        st.title("📊 My Results")
+
+        student_info = db_query(
+            "SELECT semester_id FROM users WHERE id=%s",
+            params=(int(st.session_state.user_id),)
+        )
+
+        if student_info.empty or student_info.iloc[0]["semester_id"] is None:
+            st.warning("No semester assigned.")
+            st.stop()
+
+        sem_id = int(student_info.iloc[0]["semester_id"])
+
+        results = db_query("""
+            SELECT subjects.name as subject,
+                   assignments.title,
+                   assignments.deadline,
+                   submissions.marks
+            FROM assignments
+            JOIN subjects ON assignments.subject_id = subjects.id
+            LEFT JOIN submissions
+                ON assignments.id = submissions.assignment_id
+                AND submissions.student_id=%s
+            WHERE subjects.semester_id=%s
+            ORDER BY assignments.deadline DESC
+        """, params=(int(st.session_state.user_id), sem_id))
+
+        if results.empty:
+            st.info("No assignments yet.")
+        else:
+
+            display = []
+
+            today = datetime.now().date()
+
+            for _, row in results.iterrows():
+
+                deadline = datetime.strptime(str(row["deadline"]), "%Y-%m-%d").date()
+                marks = row["marks"]
+
+                if marks and str(marks).strip():
+                    status = f"✅ Graded ({marks}/10)"
+                elif today > deadline:
+                    status = "❌ Missed (0/10)"
+                else:
+                    status = "📖 Open"
+
+                display.append({
+                    "Subject": row["subject"],
+                    "Assignment": row["title"],
+                    "Deadline": row["deadline"],
+                    "Status": status
+                })
+
+            st.dataframe(pd.DataFrame(display), use_container_width=True)
