@@ -177,13 +177,8 @@ def get_announcements_for_semester(semester_id=None):
 
 @st.cache_resource
 def init_connection():
-    return psycopg2.connect(
-        host=st.secrets["connections"]["postgresql"]["host"],
-        database=st.secrets["connections"]["postgresql"]["database"],
-        user=st.secrets["connections"]["postgresql"]["username"],
-        password=st.secrets["connections"]["postgresql"]["password"],
-        port=st.secrets["connections"]["postgresql"]["port"]
-    )
+    # This directly uses the DATABASE_URL you set up in Streamlit Secrets!
+    return psycopg2.connect(st.secrets["DATABASE_URL"])
 
 conn = init_connection()
 c = conn.cursor()
