@@ -175,13 +175,20 @@ def get_announcements_for_semester(semester_id=None):
     return df
 # ================= DATABASE =================
 
-@st.cache_resource
+@st.cache_resource(ttl=600) # Tells Streamlit to refresh the cache every 10 mins
 def init_connection():
-    # This directly uses the DATABASE_URL you set up in Streamlit Secrets!
     return psycopg2.connect(st.secrets["DATABASE_URL"])
 
 conn = init_connection()
-c = conn.cursor()
+
+# Ping the database. If Neon dropped the connection while idle, wake it up!
+try:
+    c = conn.cursor()
+    c.execute("SELECT 1") # Simple ping
+except (psycopg2.InterfaceError, psycopg2.OperationalError):
+    st.cache_resource.clear() # Clear the dead connection
+    conn = init_connection()  # Get a fresh one
+    c = conn.cursor()
 
 # USERS
 c.execute("""
