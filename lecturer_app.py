@@ -326,6 +326,8 @@ if admin_exists.empty:
         "lecturer",
         None
     ))
+    if not success:
+         st.error(f"Failed to create admin user: {error}")
     
 
 # ================= SESSION =================
@@ -388,12 +390,7 @@ if not st.session_state.logged_in:
         if st.button("Enter the Flow"):
             with st.spinner("Authenticating..."):
                 try:
-                    # 🔥 IMPORTANT FOR POSTGRESQL: 
-                    # Reset any failed transactions before starting a new query
-                    conn.rollback()   
-
-                    # Use the corrected db_query function (ensure it uses pd.read_sql_query)
-                    res = db_query("SELECT * FROM users WHERE username=%s", (user,))
+                    res = db_query("SELECT * FROM users WHERE username=%s",params-(user,))
 
                     if not res.empty:
                         # Fetch the first row from the DataFrame
@@ -410,6 +407,9 @@ if not st.session_state.logged_in:
                             
                             # Update activity for session timeout logic
                             st.session_state.last_activity = time.time()
+                            st.success("✅ Login successful!")
+                            time.sleep(0.3)
+                            st.rerun
                             
                             st.rerun()
                         else:
@@ -418,8 +418,7 @@ if not st.session_state.logged_in:
                         st.error("🚫 User not found")
 
                 except Exception as e:
-                    # Fail-safe rollback if query fails
-                    conn.rollback()
+                
                     st.error(f"🚨 Login error: {e}")
 
     # Prevent the rest of the app from running if not logged in
@@ -1031,12 +1030,13 @@ if role == "lecturer":
                 ann_title = st.text_input("Announcement Title", key="ann_title")
                 ann_message = st.text_area("Message", key="ann_message", height=100)
             with col_ann2:
-                sems_ann = pd.read_sql_query("SELECT * FROM semesters", conn)
+                sems_ann = db_query("SELECT * FROM semesters",)
                 if "name" in sems_ann.columns:
                     ann_sem_options = ["All Semesters"] + sems_ann["name"].tolist()
                 else:
                     ann_sem_options = ["All Semesters"]
                     ann_sem = st.selectbox("Target Audience", ann_sem_options, key="ann_sem")
+                    ann_priority = st.selectbox("Priority", ["Normal", "Important", "Urgent"], key="ann_priority")
                 
             
             if st.button("📢 Post Announcement", type="primary"):
@@ -1147,27 +1147,24 @@ if role == "lecturer":
                 if not name.strip():
                     st.error("Semester name cannot be empty.")
                 else:
-                    try:
-                        # Create a fresh cursor to avoid stale state
-                        cur = conn.cursor()
-                        cur.execute("INSERT INTO semesters(name) VALUES(%s)", (name.strip(),))
-                        conn.commit()
-                        cur.close()
+                    success, error = db_execute("INSERT INTO semesters(name) VALUES(%s)", (name.strip(),))
+
+                    if success:
                         st.success(f"✅ Semester '{name.strip()}' Added Successfully!")
                         st.rerun()
-                    except psycopg2.IntegrityError:
-                        conn.rollback()
+                    elif "unique" in str(error).lower():
                         st.warning("⚠️ Semester already exists.")
-                    except Exception as e:
-                        conn.rollback()
-                        # This will show us EXACTLY why it's failing if it's a connection issue
-                        st.error(f"🚨 Database Error: {e}")
+                    else:
+                        st.error(f"🚨 Database Error: {error}")
+                    
+  
+                    
         
         st.divider()
         st.subheader("📋 Existing Semesters")
         
         try:
-            df_sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+            df_sems = db_query("SELECT * FROM semesters ORDER BY name ASC",)
             st.dataframe(df_sems, use_container_width=True, hide_index=True)
         except Exception as e:
             st.error(f"Error loading semesters: {e}")
@@ -1179,7 +1176,7 @@ if role == "lecturer":
     # SUBJECTS
     with tabs[2]:
         st.title("📚 Subject Management")
-        sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        sems = db_query("SELECT * FROM semesters ORDER BY name ASC",)
         if sems.empty:
             st.warning("Please create a semester first.")
         else:
@@ -1206,7 +1203,7 @@ if role == "lecturer":
             
             st.divider()
             st.subheader("📋 Subjects for: {}".format(sem))
-            subjects_for_sem = db_query("SELECT * FROM subjects WHERE semester_id=%s ORDER BY name ASC", conn, params=(int(sem_id),))
+            subjects_for_sem = db_query("SELECT * FROM subjects WHERE semester_id=%s ORDER BY name ASC", params=(int(sem_id),))
             
             if subjects_for_sem.empty:
                 st.info("No subjects found for this semester.")
@@ -1226,11 +1223,11 @@ if role == "lecturer":
                     if st.button("🗑️ Confirm Delete Subject", type="primary", use_container_width=True):
                         subject_id = subject_options[selected_subject]
                         try:
-                            assignment_ids = db_query("SELECT id FROM assignments WHERE subject_id=%s", conn, params=(int(subject_id),))
+                            assignment_ids = db_query("SELECT id FROM assignments WHERE subject_id=%s", params=(int(subject_id),))
                             for _, row in assignment_ids.iterrows():
                                 success,erro = db_execute("DELETE FROM submissions WHERE assignment_id=%s", (row["id"],))
                             success,erro = db_execute("DELETE FROM assignments WHERE subject_id=%s", (int(subject_id),))
-                            materials = db_query("SELECT file_path FROM study_materials WHERE subject_id=%s", conn, params=(int(subject_id),))
+                            materials = db_query("SELECT file_path FROM study_materials WHERE subject_id=%s", params=(int(subject_id),))
                             for _, mat in materials.iterrows():
                                 if mat['file_path'] and os.path.exists(mat['file_path']): os.remove(mat['file_path'])
                             success,erro = db_execute("DELETE FROM study_materials WHERE subject_id=%s", (int(subject_id),))
@@ -1250,7 +1247,7 @@ if role == "lecturer":
                 SELECT subjects.id as ID, subjects.name as Subject, semesters.name as Semester
                 FROM subjects JOIN semesters ON subjects.semester_id = semesters.id
                 ORDER BY semesters.name, subjects.name
-                """, conn)
+                """,)
                 if not all_subjects_debug.empty:
                     st.dataframe(all_subjects_debug, use_container_width=True, hide_index=True)
                 else:
@@ -1260,7 +1257,7 @@ if role == "lecturer":
     with tabs[3]:
         st.title("📝 Assignment Management")
         st.subheader("➕ Create New Assignment")
-        sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        sems = db_query("SELECT * FROM semesters ORDER BY name ASC",)
         if sems.empty:
             st.warning("Please create a semester first.")
         else:
@@ -1319,7 +1316,7 @@ if role == "lecturer":
 
         st.divider()
         st.subheader("📋 Existing Assignments")
-        view_sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        view_sems = db_query("SELECT * FROM semesters ORDER BY name ASC",)
         if not view_sems.empty:
             view_filter = st.selectbox("Filter by Semester", ["All"] + view_sems["name"].tolist(), key="view_assign_filter")
             if view_filter == "All":
@@ -1327,14 +1324,14 @@ if role == "lecturer":
                 SELECT assignments.id as ID, assignments.title as Title, subjects.name as Subject, semesters.name as Semester, assignments.deadline as Deadline, assignments.question_file as File
                 FROM assignments JOIN subjects ON assignments.subject_id = subjects.id JOIN semesters ON subjects.semester_id = semesters.id
                 ORDER BY assignments.deadline DESC
-                """, conn)
+                """,)
             else:
                 filter_sem_id = int(view_sems[view_sems["name"] == view_filter]["id"].values[0])
                 all_assignments = db_query("""
                 SELECT assignments.id as ID, assignments.title as Title, subjects.name as Subject, semesters.name as Semester, assignments.deadline as Deadline, assignments.question_file as File
                 FROM assignments JOIN subjects ON assignments.subject_id = subjects.id JOIN semesters ON subjects.semester_id = semesters.id
                 WHERE semesters.id = %s ORDER BY assignments.deadline DESC
-                """, conn, params=(filter_sem_id,))
+                """, params=(filter_sem_id,))
 
             if all_assignments.empty:
                 st.info("No assignments created yet.")
@@ -1344,7 +1341,7 @@ if role == "lecturer":
                 st.divider()
                 st.subheader("📄 Assignment Details")
                 for _, assignment in all_assignments.iterrows():
-                    submission_count = db_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s", conn, params=(assignment['ID'],)).iloc[0]['count']
+                    submission_count = db_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s", params=(assignment['ID'],)).iloc[0]['count']
                     deadline_display = format_deadline_display(assignment['Deadline'])
                     with st.expander("{} - {} - {} | {}".format(assignment['Semester'], assignment['Subject'], assignment['Title'], deadline_display)):
                         col_detail1, col_detail2 = st.columns([2, 1])
@@ -1386,7 +1383,7 @@ if role == "lecturer":
                         with col_del2:
                             if st.button("🗑️ Delete Assignment", key="delete_assign_{}".format(assignment['ID']), type="primary", use_container_width=True):
                                 try:
-                                    submissions = db_query("SELECT submission_file FROM submissions WHERE assignment_id=%s", conn, params=(assignment['ID'],))
+                                    submissions = db_query("SELECT submission_file FROM submissions WHERE assignment_id=%s", params=(assignment['ID'],))
                                     for _, sub in submissions.iterrows():
                                         if sub['submission_file'] and os.path.exists(sub['submission_file']): os.remove(sub['submission_file'])
                                     success,erro = db_execute("DELETE FROM submissions WHERE assignment_id=%s", (assignment['ID'],))
@@ -1402,7 +1399,7 @@ if role == "lecturer":
     # SUBMISSIONS & AI
     with tabs[4]:
         st.subheader("Student Submissions & AI Grading")
-        sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        sems = db_query("SELECT * FROM semesters ORDER BY name ASC",)
         if not sems.empty:
             selected_sem = st.selectbox("Filter by Semester", ["All"] + sems["name"].tolist(), key="filter_sem")
             if selected_sem == "All":
@@ -1410,14 +1407,14 @@ if role == "lecturer":
                 SELECT submissions.id, users.username, users.full_name, semesters.name as semester, subjects.name as subject, assignments.title as assignment, assignments.rubric, submissions.submission_time, submissions.submission_file, submissions.marks, submissions.ai_summary
                 FROM submissions JOIN users ON submissions.student_id = users.id JOIN assignments ON submissions.assignment_id = assignments.id JOIN subjects ON assignments.subject_id = subjects.id JOIN semesters ON subjects.semester_id = semesters.id
                 ORDER BY submissions.submission_time DESC
-                """, conn)
+                """,)
             else:
                 sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
                 df = db_query("""
                 SELECT submissions.id, users.username, users.full_name, semesters.name as semester, subjects.name as subject, assignments.title as assignment, assignments.rubric, submissions.submission_time, submissions.submission_file, submissions.marks, submissions.ai_summary
                 FROM submissions JOIN users ON submissions.student_id = users.id JOIN assignments ON submissions.assignment_id = assignments.id JOIN subjects ON assignments.subject_id = subjects.id JOIN semesters ON subjects.semester_id = semesters.id
                 WHERE semesters.id = %s ORDER BY submissions.submission_time DESC
-                """, conn, params=(sem_id,))
+                """, params=(sem_id,))
         else:
             df = pd.DataFrame()
 
@@ -1498,7 +1495,7 @@ if role == "lecturer":
         WHERE submissions.marks IS NOT NULL AND submissions.marks != ''
         GROUP BY assignments.id, assignments.title, assignments.deadline
         ORDER BY assignments.deadline ASC
-        """, conn)
+        """,)
         if not trend_data.empty:
             trend_data.set_index('Assignment', inplace=True)
             st.area_chart(trend_data['Average_Marks'])
@@ -1507,7 +1504,7 @@ if role == "lecturer":
         st.divider() 
 
         st.subheader("📊 Grade Statistics")
-        sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        sems = db_query("SELECT * FROM semesters ORDER BY name ASC")
         if not sems.empty:
             selected_sem = st.selectbox("Select Semester", ["All"] + sems["name"].tolist(), key="analytics_sem")
             if selected_sem == "All":
@@ -1516,7 +1513,7 @@ if role == "lecturer":
                 FROM submissions JOIN assignments ON submissions.assignment_id=assignments.id JOIN subjects ON assignments.subject_id = subjects.id JOIN semesters ON subjects.semester_id = semesters.id JOIN users ON submissions.student_id = users.id
                 WHERE submissions.marks IS NOT NULL AND submissions.marks != ''
                 ORDER BY semesters.name, subjects.name, assignments.title, users.full_name
-                """, conn)
+                """,)
             else:
                 sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
                 df = db_query("""
@@ -1524,7 +1521,7 @@ if role == "lecturer":
                 FROM submissions JOIN assignments ON submissions.assignment_id=assignments.id JOIN subjects ON assignments.subject_id = subjects.id JOIN semesters ON subjects.semester_id = semesters.id JOIN users ON submissions.student_id = users.id
                 WHERE semesters.id = %s AND submissions.marks IS NOT NULL AND submissions.marks != ''
                 ORDER BY subjects.name, assignments.title, users.full_name
-                """, conn, params=(sem_id,))
+                """, params=(sem_id,))
 
             if not df.empty:
                 df["marks"] = pd.to_numeric(df["Marks"], errors="coerce")
@@ -1573,7 +1570,7 @@ if role == "lecturer":
         
         if st.button("🔧 Fix ALL Students with NULL semester"):
             # Get first semester as default
-            default_sem = db_query("SELECT id FROM semesters ORDER BY id ASC LIMIT 1", conn)
+            default_sem = db_query("SELECT id FROM semesters ORDER BY id ASC LIMIT 1")
             
             if not default_sem.empty:
                 default_sem_id = int(default_sem.iloc[0]['id'])
@@ -1608,7 +1605,7 @@ if role == "lecturer":
             password = st.text_input("Password", type="password", key="student_password")
 
         with col2:
-            sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+            sems = db_query("SELECT * FROM semesters ORDER BY name ASC")
 
             if sems.empty:
                 st.warning("Please create semesters first.")
@@ -1650,7 +1647,7 @@ if role == "lecturer":
                             # Verify insertion
                             verify = db_query(
                                 "SELECT * FROM users WHERE username=%s",
-                                conn,
+                                
                                 params=(username.strip(),)
                             )
                             
@@ -1690,7 +1687,7 @@ if role == "lecturer":
             else:
                 st.write("🔍 Data Preview:", df_csv.head())
                 if st.button("🚀 Process & Register Students"):
-                    sems = db_query("SELECT * FROM semesters", conn)
+                    sems = db_query("SELECT * FROM semesters")
                     success_count = 0
                     error_count = 0
 
@@ -1735,7 +1732,7 @@ if role == "lecturer":
         st.subheader("📋 Registered Student List")
 
         # 1. Filter Dropdown for Sorting/Viewing
-        all_sems_list = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        all_sems_list = db_query("SELECT * FROM semesters ORDER BY name ASC")
         filter_col1, filter_col2 = st.columns([1, 2])
         
         with filter_col1:
@@ -1769,7 +1766,7 @@ if role == "lecturer":
                 JOIN semesters ON users.semester_id = semesters.id 
                 WHERE users.role='student' AND semesters.name = %s
                 ORDER BY users.full_name ASC
-            """, conn, params=(list_filter,))
+            """, params=(list_filter,))
 
         # 3. Display the List (hide ID column from view)
         if not students_df.empty:
@@ -1851,7 +1848,7 @@ if role == "lecturer":
         FROM users 
         WHERE role='student'
         ORDER BY username ASC
-        """, conn)
+        """)
 
         if not all_students.empty:
             student_update_options = {
@@ -1869,7 +1866,7 @@ if role == "lecturer":
                 )
             
             with col_update2:
-                sems_update = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+                sems_update = db_query("SELECT * FROM semesters ORDER BY name ASC")
                 
                 if not sems_update.empty:
                     new_semester = st.selectbox(
