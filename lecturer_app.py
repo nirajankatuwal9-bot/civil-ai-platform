@@ -201,6 +201,9 @@ def get_announcements_for_semester(semester_id=None):
 
 # ================= DATABASE TABLES =================
 
+# First, ensure we start with a completely clean connection state
+conn.rollback()
+
 # USERS
 c.execute("""
 CREATE TABLE IF NOT EXISTS users(
@@ -212,90 +215,73 @@ CREATE TABLE IF NOT EXISTS users(
     semester_id INTEGER
 )
 """)
+conn.commit() # <-- CRITICAL: Save the table BEFORE attempting to alter it!
+
 # Safe auto-migration for existing users table
 try:
     c.execute("ALTER TABLE users ADD COLUMN email TEXT")
     conn.commit()
-except:
-    conn.rollback()
-    pass # Column already exists
+except Exception:
+    conn.rollback() 
+    pass 
 
 # SEMESTERS
-c.execute("""
-CREATE TABLE IF NOT EXISTS semesters(
-    id SERIAL PRIMARY KEY,
-    name TEXT UNIQUE
-)
-""")
+c.execute("CREATE TABLE IF NOT EXISTS semesters(id SERIAL PRIMARY KEY, name TEXT UNIQUE)")
+conn.commit()
 
 # SUBJECTS
-c.execute("""
-CREATE TABLE IF NOT EXISTS subjects(
-    id SERIAL PRIMARY KEY,
-    name TEXT,
-    semester_id INTEGER
-)
-""")
+c.execute("CREATE TABLE IF NOT EXISTS subjects(id SERIAL PRIMARY KEY, name TEXT, semester_id INTEGER)")
+conn.commit()
 
 # ASSIGNMENTS
 c.execute("""
 CREATE TABLE IF NOT EXISTS assignments(
-    id SERIAL PRIMARY KEY,
-    title TEXT,
-    subject_id INTEGER,
-    deadline TEXT,
-    question_file TEXT,
+    id SERIAL PRIMARY KEY, 
+    title TEXT, 
+    subject_id INTEGER, 
+    deadline TEXT, 
+    question_file TEXT, 
     rubric TEXT
 )
 """)
+conn.commit() # <-- Save before alter
 
-# Safe auto-migration for existing databases
 try:
     c.execute("ALTER TABLE assignments ADD COLUMN rubric TEXT")
     conn.commit()
-except:
+except Exception:
     conn.rollback()
-    pass # Column already exists
+    pass
 
 # SUBMISSIONS
 c.execute("""
 CREATE TABLE IF NOT EXISTS submissions(
-    id SERIAL PRIMARY KEY,
-    assignment_id INTEGER,
-    student_id INTEGER,
-    submission_time TEXT,
-    submission_file TEXT,
-    marks TEXT,
-    ai_summary TEXT
+    id SERIAL PRIMARY KEY, assignment_id INTEGER, student_id INTEGER, submission_time TEXT, 
+    submission_file TEXT, marks TEXT, ai_summary TEXT
 )
 """)
+conn.commit()
+
 # STUDY MATERIALS
 c.execute("""
 CREATE TABLE IF NOT EXISTS study_materials(
-    id SERIAL PRIMARY KEY,
-    title TEXT,
-    subject_id INTEGER,
-    semester_id INTEGER,
-    file_path TEXT,
-    description TEXT,
-    upload_date TEXT,
-    uploaded_by INTEGER
+    id SERIAL PRIMARY KEY, title TEXT, subject_id INTEGER, semester_id INTEGER, 
+    file_path TEXT, description TEXT, upload_date TEXT, uploaded_by INTEGER
 )
 """)
+conn.commit()
+
 # ANNOUNCEMENTS
 c.execute("""
 CREATE TABLE IF NOT EXISTS announcements(
-    id SERIAL PRIMARY KEY,
-    title TEXT,
-    message TEXT,
-    semester_id INTEGER,
-    created_by INTEGER,
-    created_at TEXT,
-    priority TEXT
+    id SERIAL PRIMARY KEY, title TEXT, message TEXT, semester_id INTEGER, 
+    created_by INTEGER, created_at TEXT, priority TEXT
 )
 """)
-
 conn.commit()
+
+# Final safety net before the rest of the app runs
+conn.rollback()
 
 
 # ================= PASSWORD HELPERS =================
