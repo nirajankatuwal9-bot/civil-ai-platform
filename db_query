@@ -164,23 +164,31 @@ except Exception as e:
 
 # ================= SAFE DATABASE EXECUTION =================
 
-def db_execute(query, params=None):
-    """Safe execution for INSERT, UPDATE, DELETE with auto-commit"""
-    try:
-        c.execute(query, params)
-        # No need to commit - autocommit is enabled
-        return True, None
-    except Exception as e:
-        st.error(f"Database Error: {e}")
-        return False, str(e)
-
 def db_query(query, params=None):
-    """Safe execution for SELECT queries - returns pandas DataFrame"""
+    """Safe SELECT query - returns pandas DataFrame"""
     try:
-        return pd.read_sql_query(query, conn, params=params)
+        if params:
+            return pd.read_sql_query(query, params=params)
+        else:
+            return pd.read_sql_query(query)
     except Exception as e:
         st.error(f"Database Query Error: {e}")
         return pd.DataFrame()
+
+
+def db_execute(query, params=None):
+    """Safe INSERT / UPDATE / DELETE"""
+    try:
+        with conn.cursor() as cursor:
+            if params:
+                cursor.execute(query, params)
+            else:
+                cursor.execute(query)
+        conn.commit()
+        return True, None
+    except Exception as e:
+        conn.rollback()
+        return False, str(e)
 # USERS
 try:
     success,erro = db_execute("""
@@ -193,8 +201,8 @@ try:
         semester_id INTEGER
     )
     """)
-     if not success:
-         st.error(f"Table creating failed: {error})
+if not success:
+    st.error(f"Table creating failed: {error})
     
     
 
@@ -504,7 +512,7 @@ def get_announcements_for_semester(semester_id=None):
         LEFT JOIN semesters ON announcements.semester_id = semesters.id
         WHERE announcements.semester_id=%s OR announcements.semester_id IS NULL
         ORDER BY announcements.created_at DESC
-        """, conn, params=(int(semester_id),))
+        """, params=(int(semester_id),))
     else:
         df = db_query("""
         SELECT announcements.*, users.full_name as author, semesters.name as semester
@@ -512,7 +520,7 @@ def get_announcements_for_semester(semester_id=None):
         LEFT JOIN users ON announcements.created_by = users.id
         LEFT JOIN semesters ON announcements.semester_id = semesters.id
         ORDER BY announcements.created_at DESC
-        """, conn)
+        """)
     
     return df
 
@@ -618,9 +626,9 @@ def apply_watermark(file_path, watermark_text="🌊 The N-Streamlines | Er. Nira
 #===================PUSH Email===============================
 def send_email_notification(target_semester_id, subject, message_body):
     if target_semester_id:
-        df = db_query("SELECT email FROM users WHERE role='student' AND semester_id=%s AND email IS NOT NULL AND email != ''", conn, params=(int(target_semester_id),))
+        df = db_query("SELECT email FROM users WHERE role='student' AND semester_id=%s AND email IS NOT NULL AND email != ''", params=(int(target_semester_id),))
     else:
-        df = db_query("SELECT email FROM users WHERE role='student' AND email IS NOT NULL AND email != ''", conn)
+        df = db_query("SELECT email FROM users WHERE role='student' AND email IS NOT NULL AND email != ''")
     
     emails = df['email'].tolist()
     if not emails:
@@ -688,17 +696,17 @@ def cleanup_orphaned_files():
     space_freed = 0
     db_files = set()
     
-    assignments = db_query("SELECT question_file FROM assignments WHERE question_file IS NOT NULL AND question_file != ''", conn)
+    assignments = db_query("SELECT question_file FROM assignments WHERE question_file IS NOT NULL AND question_file != ''")
     for _, row in assignments.iterrows():
         if row['question_file']:
             db_files.add(row['question_file'])
     
-    submissions = db_query("SELECT submission_file FROM submissions WHERE submission_file IS NOT NULL AND submission_file != ''", conn)
+    submissions = db_query("SELECT submission_file FROM submissions WHERE submission_file IS NOT NULL AND submission_file != ''")
     for _, row in submissions.iterrows():
         if row['submission_file']:
             db_files.add(row['submission_file'])
     
-    materials = db_query("SELECT file_path FROM study_materials WHERE file_path IS NOT NULL AND file_path != ''", conn)
+    materials = db_query("SELECT file_path FROM study_materials WHERE file_path IS NOT NULL AND file_path != ''")
     for _, row in materials.iterrows():
         if row['file_path']:
             db_files.add(row['file_path'])
@@ -901,7 +909,7 @@ def search_students(query, semester_id=None):
         AND users.semester_id=%s
         AND (LOWER(users.full_name) LIKE %s OR LOWER(users.username) LIKE %s)
         ORDER BY users.full_name ASC
-        """, conn, params=(semester_id, '%{}%'.format(query), '%{}%'.format(query)))
+        """, params=(semester_id, '%{}%'.format(query), '%{}%'.format(query)))
     else:
         results = db_query("""
         SELECT users.id, users.full_name, users.username, semesters.name as semester
@@ -910,7 +918,7 @@ def search_students(query, semester_id=None):
         WHERE users.role='student' 
         AND (LOWER(users.full_name) LIKE %s OR LOWER(users.username) LIKE %s)
         ORDER BY users.full_name ASC
-        """, conn, params=('%{}%'.format(query), '%{}%'.format(query)))
+        """,params=('%{}%'.format(query), '%{}%'.format(query)))
     return results
 
 def search_assignments(query):
@@ -930,7 +938,7 @@ def search_assignments(query):
     JOIN semesters ON subjects.semester_id = semesters.id
     WHERE LOWER(assignments.title) LIKE %s OR LOWER(subjects.name) LIKE %s
     ORDER BY assignments.deadline DESC
-    """, conn, params=('%{}%'.format(query), '%{}%'.format(query)))
+    """, params=('%{}%'.format(query), '%{}%'.format(query)))
     return results
 
 def update_assignment(assignment_id, new_title, new_deadline, new_rubric):
@@ -953,7 +961,7 @@ def get_student_profile(student_id):
         FROM users
         LEFT JOIN semesters ON users.semester_id = semesters.id
         WHERE users.id=%s
-        """, conn, params=(int(student_id),))
+        """, params=(int(student_id),))
         
         if student_info.empty:
             return None
@@ -970,7 +978,7 @@ def get_student_profile(student_id):
         JOIN subjects ON assignments.subject_id = subjects.id
         WHERE submissions.student_id=%s
         ORDER BY submissions.submission_time DESC
-        """, conn, params=(int(student_id),))
+        """, params=(int(student_id),))
         
         total_submissions = len(submissions)
         graded = submissions[submissions['marks'].notna() & (submissions['marks'] != '')]
@@ -1075,7 +1083,7 @@ if role == "lecturer":
         JOIN subjects ON assignments.subject_id = subjects.id
         JOIN semesters ON subjects.semester_id = semesters.id
         ORDER BY assignments.deadline ASC
-        """, conn)
+        """)
         
         if all_assignments.empty:
             st.info("No assignments created yet.")
@@ -1109,7 +1117,7 @@ if role == "lecturer":
                     with st.expander("{} - {} ({})".format(assign['semester'], assign['subject'], assign['title'])):
                         st.write("**Deadline:** {}".format(assign['deadline']))
                         st.write("**Overdue by:** {} days".format(abs(assign['days'])))
-                        submissions = db_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s", conn, params=(assign['id'],))
+                        submissions = db_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s", params=(assign['id'],))
                         st.metric("Submissions Received", submissions.iloc[0]['count'])
             
             if due_today:
@@ -1125,13 +1133,13 @@ if role == "lecturer":
             st.divider()
             st.subheader("📈 Submission Statistics")
             for _, assignment in all_assignments.iterrows():
-                total_submissions = db_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s", conn, params=(assignment['id'],)).iloc[0]['count']
+                total_submissions = db_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s", params=(assignment['id'],)).iloc[0]['count']
                 deadline_display = format_deadline_display(assignment['deadline'])
                 with st.expander("{} - {} | {}".format(assignment['subject'], assignment['title'], deadline_display)):
                     col_a, col_b = st.columns(2)
                     with col_a: st.metric("Total Submissions", total_submissions)
                     with col_b:
-                        graded = db_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s AND marks IS NOT NULL AND marks != ''", conn, params=(assignment['id'],)).iloc[0]['count']
+                        graded = db_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id=%s AND marks IS NOT NULL AND marks != ''", params=(assignment['id'],)).iloc[0]['count']
                         st.metric("Graded", graded)
 
         # SEMESTERS
@@ -1265,7 +1273,7 @@ if role == "lecturer":
             with col1:
                 sem_name = st.selectbox("Select Semester", sems["name"], key="assign_sem")
                 sem_id = int(sems[sems["name"] == sem_name]["id"].values[0])
-                subjects = db_query("SELECT * FROM subjects WHERE semester_id=%s", conn, params=(sem_id,))
+                subjects = db_query("SELECT * FROM subjects WHERE semester_id=%s", params=(sem_id,))
                 if subjects.empty:
                     st.warning("Please create a subject for this semester first.")
                     subject_selected = None
@@ -1383,7 +1391,7 @@ if role == "lecturer":
                         with col_del2:
                             if st.button("🗑️ Delete Assignment", key="delete_assign_{}".format(assignment['ID']), type="primary", use_container_width=True):
                                 try:
-                                    submissions = db_query("SELECT submission_file FROM submissions WHERE assignment_id=%s", params=(assignment['ID'],))
+                                    submissions = db_query("SELECT submission_file FROM submissions WHERE assignment_id=%s", params=(assignment['ID']))
                                     for _, sub in submissions.iterrows():
                                         if sub['submission_file'] and os.path.exists(sub['submission_file']): os.remove(sub['submission_file'])
                                     success,erro = db_execute("DELETE FROM submissions WHERE assignment_id=%s", (assignment['ID'],))
@@ -1399,7 +1407,7 @@ if role == "lecturer":
     # SUBMISSIONS & AI
     with tabs[4]:
         st.subheader("Student Submissions & AI Grading")
-        sems = db_query("SELECT * FROM semesters ORDER BY name ASC",)
+        sems = db_query("SELECT * FROM semesters ORDER BY name ASC")
         if not sems.empty:
             selected_sem = st.selectbox("Filter by Semester", ["All"] + sems["name"].tolist(), key="filter_sem")
             if selected_sem == "All":
@@ -1407,7 +1415,7 @@ if role == "lecturer":
                 SELECT submissions.id, users.username, users.full_name, semesters.name as semester, subjects.name as subject, assignments.title as assignment, assignments.rubric, submissions.submission_time, submissions.submission_file, submissions.marks, submissions.ai_summary
                 FROM submissions JOIN users ON submissions.student_id = users.id JOIN assignments ON submissions.assignment_id = assignments.id JOIN subjects ON assignments.subject_id = subjects.id JOIN semesters ON subjects.semester_id = semesters.id
                 ORDER BY submissions.submission_time DESC
-                """,)
+                """)
             else:
                 sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
                 df = db_query("""
@@ -1495,7 +1503,7 @@ if role == "lecturer":
         WHERE submissions.marks IS NOT NULL AND submissions.marks != ''
         GROUP BY assignments.id, assignments.title, assignments.deadline
         ORDER BY assignments.deadline ASC
-        """,)
+        """)
         if not trend_data.empty:
             trend_data.set_index('Assignment', inplace=True)
             st.area_chart(trend_data['Average_Marks'])
@@ -1513,7 +1521,7 @@ if role == "lecturer":
                 FROM submissions JOIN assignments ON submissions.assignment_id=assignments.id JOIN subjects ON assignments.subject_id = subjects.id JOIN semesters ON subjects.semester_id = semesters.id JOIN users ON submissions.student_id = users.id
                 WHERE submissions.marks IS NOT NULL AND submissions.marks != ''
                 ORDER BY semesters.name, subjects.name, assignments.title, users.full_name
-                """,)
+                """)
             else:
                 sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
                 df = db_query("""
@@ -1754,7 +1762,7 @@ if role == "lecturer":
                 LEFT JOIN semesters ON users.semester_id = semesters.id 
                 WHERE users.role='student' 
                 ORDER BY semesters.name ASC, users.full_name ASC
-            """,)
+            """)
         else:
             students_df = db_query("""
                 SELECT 
@@ -1909,7 +1917,7 @@ if role == "lecturer":
         
         with col1:
             # Select Semester
-            sems_material = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+            sems_material = db_query("SELECT * FROM semesters ORDER BY name ASC")
             
             if sems_material.empty:
                 st.warning("Please create semesters first.")
@@ -1920,7 +1928,7 @@ if role == "lecturer":
                 # Get subjects for selected semester
                 subjects_material = db_query(
                     "SELECT * FROM subjects WHERE semester_id=%s",
-                    conn,
+                    
                     params=(material_sem_id,)
                 )
                 
@@ -2007,7 +2015,7 @@ if role == "lecturer":
         st.subheader("📋 Uploaded Study Materials")
         
         # Filter by semester
-        filter_sems = db_query("SELECT * FROM semesters ORDER BY name ASC", conn)
+        filter_sems = db_query("SELECT * FROM semesters ORDER BY name ASC")
         
         if not filter_sems.empty:
             filter_semester = st.selectbox(
@@ -2031,7 +2039,7 @@ if role == "lecturer":
                 JOIN subjects ON study_materials.subject_id = subjects.id
                 JOIN semesters ON study_materials.semester_id = semesters.id
                 ORDER BY study_materials.upload_date DESC
-                """, conn)
+                """)
             else:
                 filter_sem_id = int(filter_sems[filter_sems["name"] == filter_semester]["id"].values[0])
                 materials_df = db_query("""
@@ -2048,7 +2056,7 @@ if role == "lecturer":
                 JOIN semesters ON study_materials.semester_id = semesters.id
                 WHERE study_materials.semester_id = %s
                 ORDER BY study_materials.upload_date DESC
-                """, conn, params=(filter_sem_id,))
+                """, params=(filter_sem_id,))
             
             if materials_df.empty:
                 st.info("📭 No study materials uploaded yet.")
@@ -2280,19 +2288,19 @@ if role == "lecturer":
         col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
         
         with col_stat1:
-            semester_count = db_query("SELECT COUNT(*) as count FROM semesters", conn).iloc[0]['count']
+            semester_count = db_query("SELECT COUNT(*) as count FROM semesters").iloc[0]['count']
             st.metric("🎓 Semesters", semester_count)
         
         with col_stat2:
-            student_count = db_query("SELECT COUNT(*) as count FROM users WHERE role='student'", conn).iloc[0]['count']
+            student_count = db_query("SELECT COUNT(*) as count FROM users WHERE role='student'").iloc[0]['count']
             st.metric("👥 Students", student_count)
         
         with col_stat3:
-            assignment_count = db_query("SELECT COUNT(*) as count FROM assignments", conn).iloc[0]['count']
+            assignment_count = db_query("SELECT COUNT(*) as count FROM assignments").iloc[0]['count']
             st.metric("📝 Assignments", assignment_count)
         
         with col_stat4:
-            submission_count = db_query("SELECT COUNT(*) as count FROM submissions", conn).iloc[0]['count']
+            submission_count = db_query("SELECT COUNT(*) as count FROM submissions").iloc[0]['count']
             st.metric("📤 Submissions", submission_count)
             st.divider()
         
@@ -2391,7 +2399,7 @@ if role == "lecturer":
         LEFT JOIN semesters ON users.semester_id = semesters.id
         WHERE users.role='student'
         ORDER BY users.username ASC
-        """, conn)
+        """)
         
         if all_students.empty:
             st.info("No students registered yet.")
@@ -2534,7 +2542,7 @@ elif role == "student":
         # 1. First, get student's semester info
         student_info = db_query(
             "SELECT semester_id, username FROM users WHERE id=%s",
-            conn,
+            
             params=(int(st.session_state.user_id),)
         )
 
@@ -2595,7 +2603,7 @@ elif role == "student":
         # Get student's semester
         student_info = db_query(
             "SELECT semester_id, username FROM users WHERE id=%s",
-            conn,
+            
             params=(int(st.session_state.user_id),)
         )
 
@@ -2614,7 +2622,7 @@ elif role == "student":
         # Get semester name
         semester_info = db_query(
             "SELECT name FROM semesters WHERE id=%s",
-            conn,
+            
             params=(sem_id,)
         )
         
@@ -2635,7 +2643,7 @@ elif role == "student":
         JOIN subjects ON assignments.subject_id = subjects.id
         WHERE subjects.semester_id=%s
         ORDER BY assignments.deadline ASC
-        """, conn, params=(sem_id,))
+        """, params=(sem_id,))
         
         if not all_assignments.empty:
             # Check submission status
@@ -2650,7 +2658,7 @@ elif role == "student":
                 submission = db_query("""
                 SELECT id FROM submissions
                 WHERE assignment_id=%s AND student_id=%s
-                """, conn, params=(int(assignment['id']), int(st.session_state.user_id)))
+                """, params=(int(assignment['id']), int(st.session_state.user_id)))
                 
                 days, status, color = get_deadline_status(assignment['deadline'])
                 
@@ -2727,7 +2735,7 @@ elif role == "student":
         JOIN subjects ON assignments.subject_id = subjects.id
         WHERE subjects.semester_id=%s
         ORDER BY assignments.deadline ASC
-        """, conn, params=(sem_id,))
+        """, params=(sem_id,))
 
         if assignments.empty:
             st.info("📭 No assignments available for your semester.")
@@ -2738,7 +2746,7 @@ elif role == "student":
                 existing_submission = db_query("""
                 SELECT * FROM submissions
                 WHERE assignment_id=%s AND student_id=%s
-                """, conn, params=(int(row["id"]), int(st.session_state.user_id)))
+                """, params=(int(row["id"]), int(st.session_state.user_id)))
                 
                 # Get deadline status
                 deadline_display = format_deadline_display(row['deadline'])
@@ -2881,7 +2889,7 @@ elif role == "student":
         # Get student's semester
         student_info = db_query(
             "SELECT semester_id FROM users WHERE id=%s",
-            conn,
+            
             params=(int(st.session_state.user_id),)
         )
         
@@ -2893,7 +2901,7 @@ elif role == "student":
             # Get semester name
             semester_info = db_query(
                 "SELECT name FROM semesters WHERE id=%s",
-                conn,
+                
                 params=(sem_id,)
             )
             
@@ -2913,7 +2921,7 @@ elif role == "student":
             JOIN subjects ON study_materials.subject_id = subjects.id
             WHERE study_materials.semester_id = %s
             ORDER BY subjects.name ASC, study_materials.upload_date DESC
-            """, conn, params=(sem_id,))
+            """, params=(sem_id,))
             
             if materials.empty:
                 st.info("📭 No study materials available yet.")
@@ -2976,7 +2984,7 @@ elif role == "student":
         try:
             student_id = int(st.session_state.user_id)
             # Use the sem_id we calculated at the start of the student section
-            results_df = db_query(query, conn, params=(student_id, sem_id))
+            results_df = db_query(query, params=(student_id, sem_id))
 
             if results_df.empty:
                 st.info("📭 No assignments have been posted for your semester yet.")
