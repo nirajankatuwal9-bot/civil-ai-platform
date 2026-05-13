@@ -308,7 +308,7 @@ if admin_exists.empty:
     VALUES(%s,%s,%s,%s,%s)
     """, (
         "Administrator",
-        "admin",
+        "Nirasmi",
         hash_password("admin123"),
         "lecturer",
         None
