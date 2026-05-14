@@ -168,7 +168,7 @@ def create_announcement(title, message, semester_id, priority, user_id):
             message.strip(),
             int(semester_id) if semester_id else None,
             int(user_id),
-            str(datetime.now()),
+            str(datetime.now(NST)),
             priority
         ))
         
@@ -604,7 +604,7 @@ def get_deadline_status(deadline_str):
     try:
         # Parse deadline
         deadline = datetime.strptime(deadline_str, "%Y-%m-%d")
-        today = datetime.now()
+        today = datetime.now(NST)
         
         # Calculate difference
         days_remaining = (deadline - today).days
@@ -789,7 +789,7 @@ def check_deadline_passed(deadline_str):
     """
     try:
         deadline_date = datetime.strptime(str(deadline_str), '%Y-%m-%d').date()
-        current_date = datetime.now().date()
+        current_date = datetime.now(NST).date()
         
         if current_date > deadline_date:
             days_late = (current_date - deadline_date).days
@@ -815,7 +815,7 @@ def create_database_backup():
         os.makedirs(backup_dir, exist_ok=True)
         
         # Generate backup filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(NST).strftime("%Y%m%d_%H%M%S")
         backup_filename = "lecturer_backup_{}.db".format(timestamp)
         backup_path = os.path.join(backup_dir, backup_filename)
         
@@ -1667,7 +1667,7 @@ if role == "lecturer":
                         if not is_valid:
                             st.error("❌ File Validation Failed: {}".format(validation_msg))
                         else:
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            timestamp = datetime.now(NST).strftime("%Y%m%d_%H%M%S")
                             file_path = "assignment_files/{}_{}.pdf".format(timestamp, file.name.replace(" ", "_"))
                             
                             # Safe file save operation
