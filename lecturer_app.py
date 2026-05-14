@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import psycopg2
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import os
 import re
 from google import genai
@@ -16,6 +16,10 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+
+# ================= TIMEZONE CONFIG =================
+# Define Nepal Standard Time (UTC + 5:45)
+NST = timezone(timedelta(hours=5, minutes=45))
 
 
 # ================= CONFIG =================
