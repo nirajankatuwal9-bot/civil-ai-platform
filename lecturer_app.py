@@ -325,7 +325,7 @@ if not st.session_state.get("logged_in", False):
                     # 🌐 ➕ Capture the specific institution mapping row dynamically
                     # Falls back safely to 1 if the table column hasn't fully migrated yet
                     st.session_state.org_id = int(res.iloc[0].get("org_id", 1))
-                    
+                    st.session_state.org_id = int(res.iloc[0].get("org_id", 1))
                     st.session_state.show_splash = True
                     st.rerun()
                 else:
