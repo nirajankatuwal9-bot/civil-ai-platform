@@ -1010,27 +1010,33 @@ if role == "lecturer":
             return False, f"Cloud database query rejection link: {str(e)}"
 
     # =========================================================================
-    # TAB 4: SUBMISSIONS & AI GRADING ENGINE PANEL
+    # TAB 4: SUBMISSIONS & AI GRADING ENGINE PANEL (SaaS ARCHITECTURE)
     # =========================================================================
     with tabs[4]:
-        st.subheader("Student Submissions & AI Grading")
+        st.subheader("🌐 Student Submissions & AI Grading Portal")
 
         try:
+            # Multi-Tenant Isolation: Fetch semesters locked strictly to this organization
             sub_panel_conn = get_db_connection()
-            sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", sub_panel_conn)
+            sems = pd.read_sql_query(
+                "SELECT * FROM semesters WHERE org_id = %s ORDER BY name ASC;", 
+                sub_panel_conn, 
+                params=(st.session_state.org_id,)
+            )
             sub_panel_conn.close()
 
             if sems.empty:
-                st.info("📭 No semesters found. Please create a semester in the 'Semesters' tab first.")
+                st.info("📭 No active semesters found. Please create a semester inside your management logs first.")
             else:
                 c_sub1, c_sub2 = st.columns(2)
                 with c_sub1:
-                    selected_sem = st.selectbox("Filter Submissions by Semester", ["All"] + sems["name"].tolist(), key="filter_sem")
+                    selected_sem = st.selectbox("Filter by Semester Context", ["All"] + sems["name"].tolist(), key="filter_sem")
                 with c_sub2:
-                    selected_sec = st.selectbox("Filter Submissions by Section", ["All Sections", "Section A", "Section B"], key="filter_sec_submissions")
+                    selected_sec = st.selectbox("Filter by Target Section", ["All Sections", "Section A", "Section B"], key="filter_sec_submissions")
 
-                params = []
-                where_clauses = ["1=1"]
+                # Dynamic Parameter Array Construction for PostgreSQL Tenant Verification
+                params = [st.session_state.org_id]
+                where_clauses = ["u.org_id = %s"]
 
                 if selected_sem != "All":
                     sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
@@ -1042,8 +1048,7 @@ if role == "lecturer":
                     where_clauses.append("u.section = %s")
                     params.append(sec_letter)
 
-                where_stmt = " AND ".join(where_clauses)
-
+                # Master Data Query with multi-tenant inner joins
                 sub_panel_conn = get_db_connection()
                 df = pd.read_sql_query(f"""
                     SELECT
@@ -1055,13 +1060,13 @@ if role == "lecturer":
                     JOIN assignments a ON subm.assignment_id = a.id
                     JOIN subjects s ON a.subject_id = s.id
                     JOIN semesters sem ON s.semester_id = sem.id
-                    WHERE {where_stmt}
+                    WHERE {" AND ".join(where_clauses)}
                     ORDER BY subm.submission_time DESC;
-                """, sub_panel_conn, params=tuple(params) if params else None)
+                """, sub_panel_conn, params=tuple(params))
                 sub_panel_conn.close()
 
                 if df.empty:
-                    st.info("🔍 No student assignment uploads found matching those filter selections.")
+                    st.info("🔍 No student assignment records match your filter selections.")
                 else:
                     st.dataframe(
                         df[["semester", "section", "subject", "assignment", "username", "full_name", "submission_time", "marks"]],
@@ -1074,7 +1079,7 @@ if role == "lecturer":
                         hide_index=True
                     )
                     st.divider()
-                    st.subheader("AI Grading Tool Workspace")
+                    st.subheader("🤖 AI Hydraulic Analysis Engine Workspace")
 
                     for _, row in df.iterrows():
                         expander_title = f"{row['username']} [Sec {row['section']}] - {row['assignment']} ({row['subject']})"
@@ -1083,23 +1088,24 @@ if role == "lecturer":
                             col1, col2 = st.columns([2, 1])
 
                             with col1:
-                                st.write(f"**Student:** {row['full_name']} ({row['username']})")
-                                st.write(f"**Class Group:** {row['semester']} | **Section:** {row['section']}")
-                                st.write(f"**Subject:** {row['subject']} | **Assignment:** {row['assignment']}")
-                                st.write(f"**Submitted:** {row['submission_time']}")
+                                st.write(f"**Student Profile:** {row['full_name']} ({row['username']})")
+                                st.write(f"**Institutional Group:** {row['semester']} | **Section:** {row['section']}")
+                                st.write(f"**Target Metric:** {row['subject']} | {row['assignment']}")
+                                st.write(f"**Logged Submission Time:** {row['submission_time']}")
 
                                 if row['marks'] and str(row['marks']).strip():
-                                    st.metric("Current Marks", f"{row['marks']}/10")
+                                    st.metric("Current Evaluation Score", f"{row['marks']}/10")
                                 else:
-                                    st.info("Not graded yet")
+                                    st.info("⏳ Awaiting Evaluation")
 
                             with col2:
                                 if row["submission_file"] and os.path.exists(row["submission_file"]):
                                     with open(row["submission_file"], "rb") as f:
                                         st.download_button(
-                                            "Download Submission PDF", f,
+                                            "📥 Download Submission Document", f,
                                             file_name=os.path.basename(row["submission_file"]),
-                                            key=f"dl_{row['id']}"
+                                            key=f"dl_{row['id']}",
+                                            use_container_width=True
                                         )
                             st.divider()
 
@@ -1107,37 +1113,30 @@ if role == "lecturer":
                                 col_a, col_b = st.columns(2)
                                     
                                 with col_a:
-                                    if st.button("AI Grade", key=f"grade_{row['id']}"):
+                                    if st.button("🤖 Run Automated AI Grading", key=f"grade_{row['id']}", use_container_width=True):
                                         if not row['rubric'] or not str(row['rubric']).strip():
-                                            st.warning("Please enter a rubric/model answer first inside your Assignment settings.")
+                                            st.warning("Please configure an analytical grading rubric inside your Assignment tab first.")
                                         else:
-                                            with st.spinner("AI processing drawing calculations..."):
-                                                try:
-                                                    result = vision_grade(row["submission_file"], row["rubric"])
-                                                    st.markdown("### **AI Analysis Response:**")
-                                                    st.write(result)
+                                            with st.spinner("AI parsing design parameters and equations..."):
+                                                result = vision_grade(row["submission_file"], row["rubric"])
+                                                st.markdown("### **AI Analytical Response Blueprint:**")
+                                                st.write(result)
 
-                                                    if result and "Error" not in str(result):
-                                                        extracted_score = extract_marks(result)
-                                                        if extracted_score is not None:
-                                                            update_conn = get_db_connection()
-                                                            with update_conn.cursor() as up_cur:
-                                                                up_cur.execute("UPDATE submissions SET marks = %s, ai_summary = %s WHERE id = %s;", (str(extracted_score), result, int(row["id"])))
-                                                            update_conn.commit()
-                                                            update_conn.close()
-                                                            st.success(f"Updated marks automatically: {extracted_score}/10")
-                                                            st.rerun()
-                                                        else:
-                                                            st.warning("Could not extract a clean integer score automatically. Map it manually on the right panel.")
-                                                            update_conn = get_db_connection()
-                                                            with update_conn.cursor() as up_cur:
-                                                                up_cur.execute("UPDATE submissions SET ai_summary = %s WHERE id = %s;", (str(result), int(row["id"])))
-                                                            update_conn.commit()
-                                                            update_conn.close()
+                                                if result and "Error" not in str(result):
+                                                    extracted_score = extract_marks(result)
+                                                    if extracted_score is not None:
+                                                        update_conn = get_db_connection()
+                                                        with update_conn.cursor() as up_cur:
+                                                            up_cur.execute(
+                                                                "UPDATE submissions SET marks = %s, ai_summary = %s WHERE id = %s;", 
+                                                                (str(extracted_score), result, int(row["id"]))
+                                                            )
+                                                        update_conn.commit()
+                                                        update_conn.close()
+                                                        st.success(f"Evaluation locked successfully: {extracted_score}/10")
+                                                        st.rerun()
                                                     else:
-                                                        st.error("AI grading payload returned execution parameter errors.")
-                                                except Exception as e:
-                                                    st.error(f"Error during AI execution: {str(e)}")
+                                                        st.warning("Could not automatically isolate an integer value from the text streams.")
                                 
                                 with col_b:
                                     default_marks = 0
@@ -1145,140 +1144,143 @@ if role == "lecturer":
                                         try: default_marks = int(row['marks'])
                                         except: default_marks = 0
                                     
-                                    manual_marks = st.number_input("Enter marks manually", min_value=0, max_value=10, value=default_marks, key=f"manual_{row['id']}")
-                                    if st.button("Save Manual Marks", key=f"save_{row['id']}"):
+                                    manual_marks = st.number_input("Override Score Manually", min_value=0, max_value=10, value=default_marks, key=f"manual_{row['id']}")
+                                    if st.button("💾 Lock Override Score", key=f"save_{row['id']}", use_container_width=True, type="primary"):
                                         manual_conn = get_db_connection()
                                         with manual_conn.cursor() as man_cur:
                                             man_cur.execute("UPDATE submissions SET marks = %s WHERE id = %s;", (str(manual_marks), int(row["id"])))
                                         manual_conn.commit()
                                         manual_conn.close()
-                                        st.success(f"Marks updated manually to {manual_marks}/10")
+                                        st.success(f"Score manual override locked at {manual_marks}/10")
                                         st.rerun()
                             
                             if row['ai_summary'] and str(row['ai_summary']).strip():
-                                with st.expander("Previous AI Feedback Logs"):
+                                with st.expander("Telemetry Calibration Feedback Logs"):
                                     st.write(row['ai_summary'])
         except Exception as e:
-            st.error(f"❌ Tab 4 Structural Execution Failure: {str(e)}")
+            st.error(f"❌ Critical Failure inside Tab 4 Pipeline: {str(e)}")
 
     # =========================================================================
-    # TAB 5: PERFORMANCE & GRADING HUB
+    # TAB 5: PERFORMANCE & GRADING HUB (SaaS MULTI-TENANT LEDGERS)
     # =========================================================================
     with tabs[5]:
         st.title("📊 Performance & Grading Hub")
         
         view_mode = st.radio(
-            "Select View Mode", 
+            "Select Registry Mode", 
             ["📈 Analytics Dashboard", "📅 Daily Roll Call", "📝 Internal Theory Ledger (40 Marks)", "🧪 Practical Ledger (25 Marks)"], 
             horizontal=True,
             key="hub_view_mode_selector"
         )
         st.divider()
 
-        # --- SUB-VIEW 1: ANALYTICS ---
+        # --- SUB-VIEW 1: MULTI-TENANT ANALYTICS ---
         if view_mode == "📈 Analytics Dashboard":
-            st.subheader("Class Performance Trend")
+            st.subheader("Class Performance Multi-Tenant Trend")
             try:
                 trend_conn = get_db_connection()
                 trend_data = pd.read_sql_query("""
                     SELECT a.title as assignment, AVG(CAST(subm.marks AS FLOAT)) as average_marks
                     FROM submissions subm
                     JOIN assignments a ON subm.assignment_id = a.id
-                    WHERE subm.marks IS NOT NULL AND subm.marks != '' AND subm.marks ~ '^[0-9.]+$'
+                    JOIN users u ON subm.student_id = u.id
+                    WHERE u.org_id = %s AND subm.marks IS NOT NULL AND subm.marks != '' AND subm.marks ~ '^[0-9.]+$'
                     GROUP BY a.id, a.title, a.deadline
                     ORDER BY a.deadline ASC;
-                """, trend_conn)
+                """, trend_conn, params=(st.session_state.org_id,))
                 trend_conn.close()
 
                 if not trend_data.empty:
                     trend_data.set_index('assignment', inplace=True)
                     st.area_chart(trend_data['average_marks'])
                 else:
-                    st.info("Not enough graded submissions to generate an analytics trend chart yet.")
+                    st.info("Not enough graded submissions to calculate average tracking telemetry metrics yet.")
             except Exception as e:
-                st.error(f"Analytics Chart Error: {str(e)}")
+                st.error(f"Analytics Chart Matrix Error: {str(e)}")
 
-        # --- SUB-VIEW 2: DAILY ROLL CALL ---
+        # --- SUB-VIEW 2: SECTIONS & ROTATION GROUP ROLL CALL ---
         elif view_mode == "📅 Daily Roll Call":
-            st.subheader("📅 Daily Attendance Puncher")
+            st.subheader("📅 Section & Rotation Group Attendance Puncher")
             try:
                 att_conn = get_db_connection()
-                sems_att = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", att_conn)
+                sems_att = pd.read_sql_query(
+                    "SELECT * FROM semesters WHERE org_id = %s ORDER BY name ASC;", 
+                    att_conn, 
+                    params=(st.session_state.org_id,)
+                )
                 
                 if sems_att.empty:
-                    st.warning("Please create a semester first.")
+                    st.warning("Please verify your institutional semesters configuration arrays.")
                     att_conn.close()
                 else:
                     c1, c2, c3, c4 = st.columns(4)
                     with c1:
-                        sel_sem_name = st.selectbox("Select Semester", sems_att["name"], key="att_sem_sel")
+                        sel_sem_name = st.selectbox("Select Target Class Group", sems_att["name"], key="att_sem_sel")
                         sel_sem_id = int(sems_att[sems_att["name"] == sel_sem_name]["id"].values[0])
                     with c2:
                         subjects_att = pd.read_sql_query("SELECT * FROM subjects WHERE semester_id = %s ORDER BY name ASC;", att_conn, params=(sel_sem_id,))
                         if subjects_att.empty:
-                            st.error("No subjects found.")
+                            st.error("No valid sub-modules found.")
                             sub_id = None
                         else:
-                            sel_sub_name = st.selectbox("Select Subject", subjects_att["name"], key="att_sub_sel")
+                            sel_sub_name = st.selectbox("Select Subject Matrix", subjects_att["name"], key="att_sub_sel")
                             sub_id = int(subjects_att[subjects_att["name"] == sel_sub_name]["id"].values[0])
                     with c3:
-                        sel_section = st.selectbox("Select Section", ["A", "B"], key="att_section_sel")
+                        sel_section = st.selectbox("Select Target Section", ["A", "B"], key="att_section_sel")
                     with c4:
-                        att_type = st.radio("Session Type", ["📝 Theory Class", "🧪 Practical Lab"], horizontal=True, key="att_session_type_toggle")
+                        att_type = st.radio("Session Core Mode", ["📝 Theory Class", "🧪 Practical Lab"], horizontal=True, key="att_session_type_toggle")
 
                     target_lab_group = "All"
                     if att_type == "🧪 Practical Lab":
                         st.divider()
-                        target_lab_group = st.selectbox("🔬 Which Lab Rotation Group is performing today?", ["Group 1", "Group 2", "Group 3", "Group 4"], key="att_lab_group_filter")
+                        target_lab_group = st.selectbox("🔬 Select Active Lab Rotation Group Matrix", ["Group 1", "Group 2", "Group 3", "Group 4"], key="att_lab_group_filter")
 
                     if sub_id:
-                        query_params = [sel_sem_id, sel_section]
+                        query_params = [st.session_state.org_id, sel_sem_id, sel_section]
                         group_clause = ""
                         if att_type == "🧪 Practical Lab":
-                            group_clause = "AND lab_group = %s"
+                            group_clause = "AND u.lab_group = %s"
                             query_params.append(target_lab_group)
 
                         students_df = pd.read_sql_query(f"""
-                            SELECT id as student_id, full_name as name, username as roll 
-                            FROM users 
-                            WHERE role = 'student' AND semester_id = %s AND section = %s {group_clause}
-                            ORDER BY username ASC;
+                            SELECT u.id as student_id, u.full_name as name, u.username as roll 
+                            FROM users u
+                            WHERE u.role = 'student' AND u.org_id = %s AND u.semester_id = %s AND u.section = %s {group_clause}
+                            ORDER BY u.username ASC;
                         """, att_conn, params=tuple(query_params))
 
                         if students_df.empty:
-                            st.info(f"No students found registered under Section {sel_section} {f'[{target_lab_group}]' if att_type == '🧪 Practical Lab' else ''}.")
+                            st.info("📭 No student profile configurations match this isolated session grid.")
                         else:
-                            header_label = f"Section {sel_section}" if att_type == "📝 Theory Class" else f"Section {sel_section} [{target_lab_group}]"
-                            st.write(f"Marking attendance for **{header_label}** on: **{datetime.now(NST).strftime('%B %d, %Y')}**")
-                            
                             students_df["present"] = True  
                             edited_att_df = st.data_editor(
                                 students_df,
                                 column_config={
                                     "student_id": None, "roll": st.column_config.TextColumn("Roll No.", disabled=True),
                                     "name": st.column_config.TextColumn("Student Name", disabled=True),
-                                    "present": st.column_config.CheckboxColumn("Attendance Status", default=True)
+                                    "present": st.column_config.CheckboxColumn("Attendance Verification Status", default=True)
                                 },
                                 use_container_width=True, hide_index=True, key="daily_attendance_grid"
                             )
 
                             st.divider()
-                            chosen_date = st.date_input("📅 Select Class/Lab Date for this Roll Call:", value=datetime.now(NST).date(), key="attendance_calendar_picker")
+                            chosen_date = st.date_input("📅 Choose Calendar Operation Log Date", value=datetime.now(NST).date(), key="attendance_calendar_picker")
                             target_date_str = chosen_date.strftime("%Y-%m-%d")
                             session_label = "Theory" if att_type == "📝 Theory Class" else "Practical"
 
-                            if st.button(f"🚀 Submit & Log Attendance for {target_date_str}", use_container_width=True, type="primary"):
+                            if st.button(f"🚀 Record & Synchronize Roll Call for {target_date_str}", use_container_width=True, type="primary"):
                                 sub_conn = get_db_connection()
                                 with sub_conn.cursor() as cur:
                                     for _, r in edited_att_df.iterrows():
                                         s_id = int(r['student_id'])
                                         status_str = "Present" if bool(r['present']) else "Absent"
                                         
+                                        # Standard PostgreSQL multi-tenant constraints tracking
                                         cur.execute("""
-                                            INSERT INTO attendance_logs (student_id, subject_id, log_date, session_type, status)
-                                            VALUES (%s, %s, %s, %s, %s)
+                                            INSERT INTO attendance_logs (student_id, subject_id, log_date, session_type, status, org_id)
+                                            VALUES (%s, %s, %s, %s, %s, %s)
                                             ON CONFLICT ON CONSTRAINT unique_attendance_entry DO UPDATE SET status = excluded.status;
-                                        """, (s_id, sub_id, target_date_str, session_label, status_str))
+                                        """, (s_id, sub_id, target_date_str, session_label, status_str, st.session_state.org_id))
                                         
                                         if session_label == "Theory":
                                             cur.execute("SELECT COUNT(*) FROM attendance_logs WHERE student_id = %s AND subject_id = %s AND session_type = 'Theory' AND status = 'Present';", (s_id, sub_id))
@@ -1300,34 +1302,34 @@ if role == "lecturer":
                                             """, (s_id, sub_id, p_count, t_count))
                                 sub_conn.commit()
                                 sub_conn.close()
-                                st.success(f"✅ Attendance for {target_date_str} logged cleanly!")
+                                st.success(f"✅ Roll Call verification locked for {target_date_str} successfully.")
                                 st.rerun()
                 att_conn.close()
             except Exception as e:
-                st.error(f"Roll Call Module Issue: {str(e)}")
+                st.error(f"Roll Call Compilation Interruption link: {str(e)}")
 
-        # --- SUB-VIEW 3: THEORY LEDGER ---
+        # --- SUB-VIEW 3: INTERNAL THEORY LEDGER (SaaS VERSION) ---
         elif view_mode == "📝 Internal Theory Ledger (40 Marks)":
             st.markdown("## 📝 Internal Theory Assessment Ledger (40 Marks)")
             try:
                 grad_conn = get_db_connection()
-                sems_grading = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", grad_conn)
+                sems_grading = pd.read_sql_query("SELECT * FROM semesters WHERE org_id = %s ORDER BY name ASC;", grad_conn, params=(st.session_state.org_id,))
                 
                 if sems_grading.empty:
-                    st.warning("Please create a semester first.")
+                    st.warning("Please finalize your institutional semesters registration arrays first.")
                     grad_conn.close()
                 else:
                     col_sel1, col_sel2 = st.columns(2)
                     with col_sel1:
-                        sel_sem_name = st.selectbox("Semester", sems_grading["name"], key="grad_sem_sel_t")
+                        sel_sem_name = st.selectbox("Target Class Matrix Group", sems_grading["name"], key="grad_sem_sel_t")
                         sel_sem_id = int(sems_grading[sems_grading["name"] == sel_sem_name]["id"].values[0])
                     with col_sel2:
                         subjects_grading = pd.read_sql_query("SELECT * FROM subjects WHERE semester_id = %s ORDER BY name ASC;", grad_conn, params=(sel_sem_id,))
                         if subjects_grading.empty:
-                            st.error("No subjects found.")
+                            st.error("No mapped engineering topics found.")
                             sel_sub_id = None
                         else:
-                            sel_sub_name = st.selectbox("Subject", subjects_grading["name"], key="grad_sub_sel_t")
+                            sel_sub_name = st.selectbox("Target Subject Module", subjects_grading["name"], key="grad_sub_sel_t")
                             sel_sub_id = int(subjects_grading[subjects_grading["name"] == sel_sub_name]["id"].values[0])
 
                     if 'sel_sub_id' in locals() and sel_sub_id:
@@ -1339,24 +1341,24 @@ if role == "lecturer":
                             COALESCE(m.t_final_raw, 0.0) as t_final_raw, COALESCE(m.t_other_raw, 0.0) as t_other_raw, COALESCE(m.t_grace, 0.0) as t_grace
                             FROM users u 
                             LEFT JOIN student_marks m ON u.id = m.student_id AND m.subject_id = %s
-                            WHERE u.role = 'student' AND u.semester_id = %s
+                            WHERE u.role = 'student' AND u.org_id = %s AND u.semester_id = %s
                             ORDER BY u.username ASC;
                         """
-                        df_t = pd.read_sql_query(query, grad_conn, params=(sel_sub_id, sel_sem_id))
+                        df_t = pd.read_sql_query(query, grad_conn, params=(sel_sub_id, st.session_state.org_id, sel_sem_id))
                         
                         edited_t = st.data_editor(
                             df_t, 
                             column_config={
                                 "student_id": None, "roll": st.column_config.TextColumn("Roll No.", disabled=True), "name": st.column_config.TextColumn("Student Name", disabled=True),
-                                "t_att_present": st.column_config.NumberColumn("Attended"), "t_att_total": st.column_config.NumberColumn("Total Classes"),
-                                "t_hw_raw": st.column_config.NumberColumn("Assignments"), "t_mid_raw": st.column_config.NumberColumn("Mid-Term (%)"),
-                                "t_final_raw": st.column_config.NumberColumn("Final Internal"), "t_other_raw": st.column_config.NumberColumn("Other"),
-                                "t_grace": st.column_config.NumberColumn("Grace (Max 5)", min_value=0.0, max_value=5.0)
+                                "t_att_present": st.column_config.NumberColumn("Attended"), "t_att_total": st.column_config.NumberColumn("Total Lectures"),
+                                "t_hw_raw": st.column_config.NumberColumn("Assignments Ledger"), "t_mid_raw": st.column_config.NumberColumn("Mid-Term Weight (%)"),
+                                "t_final_raw": st.column_config.NumberColumn("Internal Final"), "t_other_raw": st.column_config.NumberColumn("Continuous Eval"),
+                                "t_grace": st.column_config.NumberColumn("Grace Inputs", min_value=0.0, max_value=5.0)
                             }, 
                             use_container_width=True, hide_index=True, key="theory_editor"
                         )
 
-                        if st.button("💾 Synchronize Theory Marks", use_container_width=True, type="primary"):
+                        if st.button("💾 Synchronize Theory Grading Profiles", use_container_width=True, type="primary"):
                             sync_conn = get_db_connection()
                             with sync_conn.cursor() as cur:
                                 for _, r in edited_t.iterrows():
@@ -1369,47 +1371,47 @@ if role == "lecturer":
                                     """, (int(r['student_id']), int(sel_sub_id), int(r['t_att_present']), int(r['t_att_total']), float(r['t_hw_raw']), float(r['t_mid_raw']), float(r['t_final_raw']), float(r['t_other_raw']), float(r['t_grace'])))
                             sync_conn.commit()
                             sync_conn.close()
-                            st.success("✅ Theory marks successfully synchronized.")
+                            st.success("✅ Theory weight parameters safely synchronized inside Neon storage structures.")
                             st.rerun()
 
                         st.divider()
-                        st.subheader("🎯 Processed Theory Totals")
+                        st.subheader("🎯 Scaled Theory Totals Overview")
                         res_t = []
                         calc_conn = get_db_connection()
                         for _, r in edited_t.iterrows():
                             try:
                                 calc_res = calculate_internal_theory(r.to_dict(), sel_sub_id, calc_conn)
-                                res_t.append({"Roll No.": r['roll'], "Student Name": r['name'], "Total (/40)": f"{calc_res[0]:.2f}", "Eligibility": "✅ Eligible" if calc_res[1] else "❌ Ineligible"})
+                                res_t.append({"Roll No.": r['roll'], "Student Name": r['name'], "Total (/40)": f"{calc_res[0]:.2f}", "Gate Eligibility": "✅ Eligible" if calc_res[1] else "❌ Ineligible (Attendance Below 70%)"})
                             except Exception:
-                                res_t.append({"Roll No.": r['roll'], "Student Name": r['name'], "Total (/40)": "0.00", "Eligibility": "⏳ Awaiting Attendance Logs"})
+                                res_t.append({"Roll No.": r['roll'], "Student Name": r['name'], "Total (/40)": "0.00", "Gate Eligibility": "⏳ Calculation Sync Required"})
                         calc_conn.close()
                         st.dataframe(res_t, use_container_width=True, hide_index=True)
                 grad_conn.close()
             except Exception as e:
-                st.error(f"Theory Ledger Issue: {str(e)}")
+                st.error(f"Theory Core Compute Exception Link: {str(e)}")
 
-        # --- SUB-VIEW 4: PRACTICAL LEDGER ---
+        # --- SUB-VIEW 4: PRACTICAL LEDGER (SaaS VERSION) ---
         elif view_mode == "🧪 Practical Ledger (25 Marks)":
-            st.markdown("## 🧪 Practical Assessment Ledger (25 Marks)")
+            st.markdown("## 🧪 Practical Laboratory Ledger (25 Marks)")
             try:
                 grad_conn_p = get_db_connection()
-                sems_grading_p = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", grad_conn_p)
+                sems_grading_p = pd.read_sql_query("SELECT * FROM semesters WHERE org_id = %s ORDER BY name ASC;", grad_conn_p, params=(st.session_state.org_id,))
                 
                 if sems_grading_p.empty:
-                    st.warning("Please create a semester first.")
+                    st.warning("Please configure your institutional semester registration loops first.")
                     grad_conn_p.close()
                 else:
                     col_sel_p1, col_sel_p2 = st.columns(2)
                     with col_sel_p1:
-                        sel_sem_name_p = st.selectbox("Semester", sems_grading_p["name"], key="grad_sem_sel_p")
+                        sel_sem_name_p = st.selectbox("Target Class Matrix Group", sems_grading_p["name"], key="grad_sem_sel_p")
                         sel_sem_id_p = int(sems_grading_p[sems_grading_p["name"] == sel_sem_name_p]["id"].values[0])
                     with col_sel_p2:
                         subjects_grading_p = pd.read_sql_query("SELECT * FROM subjects WHERE semester_id = %s ORDER BY name ASC;", grad_conn_p, params=(sel_sem_id_p,))
                         if subjects_grading_p.empty:
-                            st.error("No subjects found.")
+                            st.error("No valid engineering topic profiles found.")
                             sel_sub_id_p = None
                         else:
-                            sel_sub_name_p = st.selectbox("Subject", subjects_grading_p["name"], key="grad_sub_sel_p")
+                            sel_sub_name_p = st.selectbox("Target Subject Module", subjects_grading_p["name"], key="grad_sub_sel_p")
                             sel_sub_id_p = int(subjects_grading_p[subjects_grading_p["name"] == sel_sub_name_p]["id"].values[0])
 
                     if 'sel_sub_id_p' in locals() and sel_sub_id_p:
@@ -1421,23 +1423,23 @@ if role == "lecturer":
                             COALESCE(m.p_test_raw, 0.0) as p_test_raw, COALESCE(m.p_viva_raw, 0.0) as p_viva_raw
                             FROM users u 
                             LEFT JOIN student_marks m ON u.id = m.student_id AND m.subject_id = %s
-                            WHERE u.role = 'student' AND u.semester_id = %s
+                            WHERE u.role = 'student' AND u.org_id = %s AND u.semester_id = %s
                             ORDER BY u.username ASC;
                         """
-                        df_p = pd.read_sql_query(query_p, grad_conn_p, params=(sel_sub_id_p, sel_sem_id_p))
+                        df_p = pd.read_sql_query(query_p, grad_conn_p, params=(sel_sub_id_p, st.session_state.org_id, sel_sem_id_p))
                         
                         edited_p = st.data_editor(
                             df_p, 
                             column_config={
                                 "student_id": None, "roll": st.column_config.TextColumn("Roll No.", disabled=True), "name": st.column_config.TextColumn("Student Name", disabled=True),
-                                "p_att_present": st.column_config.NumberColumn("Lab Attended"), "p_att_total": st.column_config.NumberColumn("Total Labs"),
-                                "p_perf_raw": st.column_config.NumberColumn("Performance"), "p_report_raw": st.column_config.NumberColumn("Reports"),
-                                "p_test_raw": st.column_config.NumberColumn("Practical Test"), "p_viva_raw": st.column_config.NumberColumn("Viva Voce")
+                                "p_att_present": st.column_config.NumberColumn("Labs Attended"), "p_att_total": st.column_config.NumberColumn("Total Lab Sessions"),
+                                "p_perf_raw": st.column_config.NumberColumn("Lab Performance"), "p_report_raw": st.column_config.NumberColumn("Lab Reports / Notebooks"),
+                                "p_test_raw": st.column_config.NumberColumn("Practical Exam"), "p_viva_raw": st.column_config.NumberColumn("Viva Voce Marks")
                             }, 
                             use_container_width=True, hide_index=True, key="practical_editor"
                         )
 
-                        if st.button("💾 Synchronize Practical Marks", use_container_width=True, type="primary"):
+                        if st.button("💾 Synchronize Laboratory Matrix Performance", use_container_width=True, type="primary"):
                             sync_conn_p = get_db_connection()
                             with sync_conn_p.cursor() as cur:
                                 for _, r in edited_p.iterrows():
@@ -1450,24 +1452,24 @@ if role == "lecturer":
                                     """, (int(r['student_id']), int(sel_sub_id_p), int(r['p_att_present']), int(r['p_att_total']), float(r['p_perf_raw']), float(r['p_report_raw']), float(r['p_test_raw']), float(r['p_viva_raw'])))
                             sync_conn_p.commit()
                             sync_conn_p.close()
-                            st.success("✅ Practical records successfully synchronized.")
+                            st.success("✅ Practical laboratory marks matrix locked securely.")
                             st.rerun()
 
                         st.divider()
-                        st.subheader("🧪 Processed Practical Totals")
+                        st.subheader("🧪 Scaled Practical Totals Overview")
                         res_p = []
                         calc_conn_p = get_db_connection()
                         for _, r in edited_p.iterrows():
                             try:
                                 calc_res_p = calculate_internal_practical(r.to_dict(), sel_sub_id_p, calc_conn_p)
-                                res_p.append({"Roll No.": r['roll'], "Student Name": r['name'], "Total (/25)": f"{calc_res_p[0]:.2f}", "Eligibility": "✅ Eligible" if calc_res_p[1] else "❌ Ineligible"})
+                                res_p.append({"Roll No.": r['roll'], "Student Name": r['name'], "Total (/25)": f"{calc_res_p[0]:.2f}", "Gate Eligibility": "✅ Eligible" if calc_res_p[1] else "❌ Ineligible (Lab Attendance < 70%)"})
                             except Exception:
-                                res_p.append({"Roll No.": r['roll'], "Student Name": r['name'], "Total (/25)": "0.00", "Eligibility": "⏳ Awaiting Lab Records"})
+                                res_p.append({"Roll No.": r['roll'], "Student Name": r['name'], "Total (/25)": "0.00", "Gate Eligibility": "⏳ Calculation Sync Required"})
                         calc_conn_p.close()
                         st.dataframe(res_p, use_container_width=True, hide_index=True)
                 grad_conn_p.close()
             except Exception as e:
-                st.error(f"Practical Ledger Issue: {str(e)}")
+                st.error(f"Practical Ledger Compute Exception Link: {str(e)}")
 
     # =========================================================================
     # TAB 6: MANAGE STUDENTS DASHBOARD
