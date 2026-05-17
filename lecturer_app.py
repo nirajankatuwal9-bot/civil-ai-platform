@@ -1625,6 +1625,54 @@ def create_announcement(title, message, semester_id, priority, user_id, expires_
                             "p_report_raw": st.column_config.NumberColumn("Lab Reports"),
                             "p_test_raw": st.column_config.NumberColumn("Practical Test"),
                             "p_viva_raw": st.column_config.NumberColumn("Viva Voce")
+                        }, 
+                        use_container_width=True, 
+                        hide_index=True, 
+                        key="practical_editor"
+                    )
 
+                    if st.button("💾 Synchronize Practical Marks", use_container_width=True, type="primary"):
+                        sync_conn_p = get_db_connection()
+                        with sync_conn_p.cursor() as cur:
+                            for _, r in edited_p.iterrows():
+                                cur.execute("""
+                                    INSERT INTO student_marks (
+                                        student_id, subject_id, p_att_present, p_att_total,
+                                        p_perf_raw, p_report_raw, p_test_raw, p_viva_raw
+                                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                                    ON CONFLICT(student_id, subject_id) DO UPDATE SET 
+                                        p_att_present = excluded.p_att_present,
+                                        p_att_total = excluded.p_att_total,
+                                        p_perf_raw = excluded.p_perf_raw,
+                                        p_report_raw = excluded.p_report_raw,
+                                        p_test_raw = excluded.p_test_raw,
+                                        p_viva_raw = excluded.p_viva_raw;
+                                """, (
+                                    int(r['student_id']), int(sel_sub_id_p),
+                                    int(r['p_att_present']), int(r['p_att_total']),
+                                    float(r['p_perf_raw']), float(r['p_report_raw']),
+                                    float(r['p_test_raw']), float(r['p_viva_raw'])
+                                ))
+                        sync_conn_p.commit()
+                        sync_conn_p.close()
+                        st.success("✅ Practical lab records successfully synchronized and locked inside PostgreSQL.")
+                        st.rerun()
+
+                    st.divider()
+                    st.subheader("🧪 Step 2: Processed Practical Totals")
+                    
+                    res_p = []
+                    calc_conn_p = get_db_connection()
+                    for _, r in edited_p.iterrows():
+                        calc_res_p = calculate_internal_practical(r.to_dict(), sel_sub_id_p, calc_conn_p)
+                        res_p.append({
+                            "Roll No.": r['roll'],
+                            "Student Name": r['name'],
+                            "Total (/25)": f"{calc_res_p[0]:.2f}",
+                            "Eligibility": "✅ Eligible" if calc_res_p[1] else "❌ Ineligible"
+                        })
+                    calc_conn_p.close()
+                    st.dataframe(res_p, use_container_width=True, hide_index=True)
+            grad_conn_p.close()
 
     
