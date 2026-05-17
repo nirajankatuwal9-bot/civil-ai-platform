@@ -218,3 +218,148 @@ def seed_default_lecturer():
 
 # Execute default system seeding operation
 seed_default_lecturer()
+# ================= SESSION SECURITY GATES =================
+
+# Session timeout window configuration tracking (30 minutes)
+SESSION_TIMEOUT = 1800
+
+def check_session_timeout():
+    """
+    Evaluates active user interaction telemetry timestamps.
+    Returns: True if valid, False if session has expired.
+    """
+    if "last_activity" not in st.session_state:
+        st.session_state.last_activity = time.time()
+        return True
+    
+    current_time = time.time()
+    elapsed = current_time - st.session_state.last_activity
+    
+    if elapsed > SESSION_TIMEOUT:
+        return False  
+    
+    st.session_state.last_activity = current_time
+    return True
+
+
+def require_login():
+    """
+    Enforces route-guard isolation blocks on structural components.
+    """
+    if not st.session_state.get("logged_in", False):
+        st.error("🔒 Please login to access this page")
+        st.stop()
+    
+    if not check_session_timeout():
+        st.warning("⏰ Your session has expired due to inactivity. Please login again.")
+        st.session_state.clear()
+        st.rerun()
+
+
+# ================= SPACE-PROOF LOGIN FLOW GATE =================
+
+if not st.session_state.get("logged_in", False):
+
+    st.markdown("""
+        <div style='text-align: center; padding-bottom: 20px;'>
+            <h1 style='color: #004b87; font-size: 3em; margin-bottom: 0px;'>🌊 THE N-STREAMLINES</h1>
+            <p style='color: #555; font-size: 1.2em; font-weight: 500; margin-top: 5px;'>
+                Developed by Nirajan Katuwal
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    #-------------------------------------------
+    with st.container(border=True):
+        # Clean stray whitespaces from user inputs instantly using .strip()
+        user_input = st.text_input("Username").strip()
+        pw_input = st.text_input("Password", type="password").strip()
+
+        if st.button("Enter the Flow", use_container_width=True, type="primary"):
+            if not user_input or not pw_input:
+                st.warning("Please enter both your Username and Password.")
+            else:
+                # Open isolated connection context for processing login request arrays
+                login_conn = get_db_connection()
+                
+                # Translated query matching PostgreSQL placeholder requirements (%s)
+                res = pd.read_sql_query(
+                    "SELECT * FROM users WHERE username = %s AND org_id = 1",
+                    login_conn,
+                    params=(user_input,)
+                )
+                login_conn.close()
+
+                if not res.empty and check_password(pw_input, res.iloc[0]["password"]):
+                    st.session_state.logged_in = True
+                    st.session_state.user_id = int(res.iloc[0]["id"])
+                    st.session_state.role = str(res.iloc[0]["role"])
+                    st.session_state.username = str(res.iloc[0]["username"])
+                    st.session_state.semester_id = res.iloc[0]["semester_id"] if pd.notna(res.iloc[0]["semester_id"]) else None
+                    st.session_state.full_name = str(res.iloc[0]["full_name"])
+                    st.session_state.show_splash = True
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid Username or Password. Please check for typos and try again.")
+    
+    # Secure structural exit barrier for unauthenticated runtime contexts
+    st.stop()
+
+
+# ================= SECURE AUTHENTICATED RUNTIME ENVIRONMENT =================
+# Down-stream blocks are only parsed when a user successfully enters the flow matrix.
+
+# ---------- TIME & GREETING SETUP ----------
+now_nst = datetime.now(NST)
+current_hour = now_nst.hour
+
+if current_hour < 12:
+    greeting = "🌅 Good Morning"
+elif 12 <= current_hour < 18:
+    greeting = "☀️ Good Afternoon"
+else:
+    greeting = "🌙 Good Evening"
+
+user_name = st.session_state.full_name
+current_date = now_nst.strftime("%A, %B %d, %Y")
+current_time = now_nst.strftime("%I:%M %p")
+
+
+# ---------- THE WELCOME SPLASH SCREEN LAYOUT ----------
+if st.session_state.get("show_splash"):
+    st.markdown("<br><br><br><br>", unsafe_allow_html=True)
+    st.markdown(f"<h1 style='text-align: center; color: #004b87;'>{greeting}, {user_name}!</h1>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align: center; color: #555555;'>{current_date} &nbsp;|&nbsp; {current_time} (NST)</h3>", unsafe_allow_html=True)
+    
+    with st.spinner("Loading your secure workspace..."):
+        time.sleep(2.5) 
+        
+    st.session_state.show_splash = False
+    st.rerun()
+    
+    
+# ---------- THE MAIN CONTAINER TIMELINE HEADER ----------
+else:
+    header_col1, header_col2 = st.columns([2, 1])
+    
+    with header_col1:
+        st.markdown(f"### {greeting}, {user_name}!")
+        
+    with header_col2:
+        st.markdown(f"""
+        <div style='text-align: right; color: #555555;'>
+            <strong>{current_date}</strong><br>
+            {current_time} (NST)
+        </div>
+        """, unsafe_allow_html=True)
+        
+    st.divider()
+
+def get_greeting():
+    """Returns a dynamic greeting string based on Nepal Standard Time clocks."""
+    curr_hour = datetime.now(NST).hour
+    if curr_hour < 12:
+        return "Good morning ☀️"
+    elif 12 <= curr_hour < 18:
+        return "Good afternoon 🌤️"
+    else:
+        return "Good evening 🌙"
