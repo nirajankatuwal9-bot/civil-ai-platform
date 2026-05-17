@@ -691,6 +691,14 @@ def calculate_internal_practical(row, subject_id, db_conn):
     is_eligible = att_ratio >= 0.70
     
     return round(raw_total, 2), is_eligible
+# ================= ROLE STATE EXTRACTOR =================
+# Pulls authenticated metadata down to root level on app reruns
+role = st.session_state.get("role", None)
+user_id = st.session_state.get("user_id", None)
+username = st.session_state.get("username", None)
+
+
+
 # =========================================================================
 # ======================== MAIN ROUTING INTERFACE =========================
 # =========================================================================
