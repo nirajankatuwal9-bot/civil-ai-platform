@@ -218,6 +218,14 @@ def seed_default_lecturer():
 
 # Execute default system seeding operation
 seed_default_lecturer()
+# ================= SESSION INITIALIZATION =================
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.user_id = None
+    st.session_state.role = None
+    st.session_state.username = None
+    st.session_state.org_id = 1  # 🌐 ➕ SaaS MULTI-TENANT INITIALIZER ROOT
 # ================= SESSION SECURITY GATES =================
 
 # Session timeout window configuration tracking (30 minutes)
@@ -308,11 +316,16 @@ if not st.session_state.get("logged_in", False):
 
                 if not res.empty and check_password(pw_input, res.iloc[0]["password"]):
                     st.session_state.logged_in = True
-                    st.session_state.user_id = int(res.iloc[0]["id"])
-                    st.session_state.role = str(res.iloc[0]["role"])
-                    st.session_state.username = str(res.iloc[0]["username"])
-                    st.session_state.semester_id = res.iloc[0]["semester_id"] if pd.notna(res.iloc[0]["semester_id"]) else None
-                    st.session_state.full_name = str(res.iloc[0]["full_name"])
+                    st.session_state.user_id = res.iloc[0]["id"]
+                    st.session_state.role = res.iloc[0]["role"]
+                    st.session_state.username = res.iloc[0]["username"]
+                    st.session_state.semester_id = res.iloc[0]["semester_id"]
+                    st.session_state.full_name = res.iloc[0]["full_name"]
+                    
+                    # 🌐 ➕ Capture the specific institution mapping row dynamically
+                    # Falls back safely to 1 if the table column hasn't fully migrated yet
+                    st.session_state.org_id = int(res.iloc[0].get("org_id", 1))
+                    
                     st.session_state.show_splash = True
                     st.rerun()
                 else:
