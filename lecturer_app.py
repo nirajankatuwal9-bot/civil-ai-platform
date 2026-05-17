@@ -1179,4 +1179,452 @@ def create_announcement(title, message, semester_id, priority, user_id, expires_
                     if row['ai_summary'] and str(row['ai_summary']).strip():
                         with st.expander("Previous AI Feedback Logs"):
                             st.write(row['ai_summary'])
+
+# ==========================================
+    # TAB 5: PERFORMANCE & GRADING HUB
+    # ==========================================
+    with tabs[5]:
+        st.title("📊 Performance & Grading Hub")
+        
+        # 1. THE SWITCHBOARD: Toggle between sub-views inside the hub
+        view_mode = st.radio(
+            "Select View Mode", 
+            ["📈 Analytics Dashboard", "📅 Daily Roll Call", "📝 Internal Theory Ledger (40 Marks)", "🧪 Practical Ledger (25 Marks)"], 
+            horizontal=True,
+            key="hub_view_mode_selector"
+        )
+        st.divider()
+
+        # ================= SUB-VIEW 1: ANALYTICS DASHBOARD =================
+        if view_mode == "📈 Analytics Dashboard":
+            st.subheader("Class Performance Trend")
+            
+            trend_conn = get_db_connection()
+            trend_data = pd.read_sql_query("""
+                SELECT
+                    a.title as assignment,
+                    AVG(CAST(subm.marks AS FLOAT)) as average_marks
+                FROM submissions subm
+                JOIN assignments a ON subm.assignment_id = a.id
+                WHERE subm.marks IS NOT NULL AND subm.marks != ''
+                GROUP BY a.id, a.title, a.deadline
+                ORDER BY a.deadline ASC;
+            """, trend_conn)
+            trend_conn.close()
+
+            if not trend_data.empty:
+                trend_data.set_index('assignment', inplace=True)
+                st.area_chart(trend_data['average_marks'])
+            else:
+                st.info("Not enough graded submissions to generate an analytics trend chart yet.")
+            
+            st.divider() 
+            st.subheader("📊 Grade Reports & Statistics")
+            
+            report_conn = get_db_connection()
+            sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", report_conn)
+            
+            if not sems.empty:
+                selected_sem = st.selectbox("Select Semester for Stats", ["All"] + sems["name"].tolist(), key="analytics_sem")
+                
+                params = []
+                where_clause = "WHERE subm.marks IS NOT NULL AND subm.marks != ''"
+                if selected_sem != "All":
+                    sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
+                    where_clause += " AND sem.id = %s"
+                    params.append(sem_id)
+
+                df_reports = pd.read_sql_query(f"""
+                    SELECT 
+                        sem.name as semester, s.name as subject, a.title as assignment,
+                        u.full_name as student_name, u.username as username,
+                        subm.submission_time as submission_date, a.deadline as deadline,
+                        subm.marks as marks
+                    FROM submissions subm
+                    JOIN assignments a ON subm.assignment_id = a.id
+                    JOIN subjects s ON a.subject_id = s.id
+                    JOIN semesters sem ON s.semester_id = sem.id
+                    JOIN users u ON subm.student_id = u.id
+                    {where_clause}
+                    ORDER BY sem.name, s.name, a.title, u.full_name;
+                """, report_conn, params=tuple(params) if params else None)
+                report_conn.close()
+
+                if not df_reports.empty:
+                    df_reports["marks_numeric"] = pd.to_numeric(df_reports["marks"], errors="coerce")
+                    
+                    st.subheader("📥 Download Grade Reports")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        csv_detailed = df_reports.to_csv(index=False).encode('utf-8')
+                        st.download_button("📄 Detailed Report", csv_detailed, f"Grades_Detailed_{selected_sem}.csv", 'text/csv', use_container_width=True)
+                    
+                    with col2:
+                        df_summary = df_reports[['semester', 'subject', 'assignment', 'student_name', 'username', 'marks']]
+                        csv_summary = df_summary.to_csv(index=False).encode('utf-8')
+                        st.download_button("📊 Summary Report", csv_summary, f"Grades_Summary_{selected_sem}.csv", 'text/csv', use_container_width=True)
+                    
+                    with col3:
+                        df_pivot = df_reports.pivot_table(index=['semester', 'student_name', 'username', 'subject'], columns='assignment', values='marks_numeric', aggfunc='first').reset_index()
+                        assignment_cols = [col for col in df_pivot.columns if col not in ['semester', 'student_name', 'username', 'subject']]
+                        df_pivot['Average'] = df_pivot[assignment_cols].mean(axis=1).round(2)
+                        csv_pivot = df_pivot.to_csv(index=False).encode('utf-8')
+                        st.download_button("📈 Student-wise Summary", csv_pivot, f"Grades_Student_{selected_sem}.csv", 'text/csv', use_container_width=True)
+                    
+                    st.divider()
+                    st.subheader("📋 Detailed Grade Table")
+                    st.dataframe(df_reports[['semester', 'subject', 'assignment', 'student_name', 'username', 'marks']], use_container_width=True, hide_index=True)
+                else:
+                    st.info("No graded student submissions found for report generation yet.")
+            else:
+                report_conn.close()
+
+        # ================= SUB-VIEW 2: DAILY ROLL CALL ATTENDANCE PUNCHER =================
+        elif view_mode == "📅 Daily Roll Call":
+            st.subheader("📅 Daily Attendance Puncher")
+            
+            att_conn = get_db_connection()
+            sems_att = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", att_conn)
+            
+            if sems_att.empty:
+                st.warning("Please create a semester first.")
+                att_conn.close()
+            else:
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    sel_sem_name = st.selectbox("Select Semester", sems_att["name"], key="att_sem_sel")
+                    sel_sem_id = int(sems_att[sems_att["name"] == sel_sem_name]["id"].values[0])
+                with c2:
+                    subjects_att = pd.read_sql_query("SELECT * FROM subjects WHERE semester_id = %s ORDER BY name ASC;", att_conn, params=(sel_sem_id,))
+                    if subjects_att.empty:
+                        st.error("No subjects found.")
+                        sub_id = None
+                    else:
+                        sel_sub_name = st.selectbox("Select Subject", subjects_att["name"], key="att_sub_sel")
+                        sub_id = int(subjects_att[subjects_att["name"] == sel_sub_name]["id"].values[0])
+                with c3:
+                    sel_section = st.selectbox("Select Section", ["A", "B"], key="att_section_sel")
+                with c4:
+                    att_type = st.radio("Session Type", ["📝 Theory Class", "🧪 Practical Lab"], horizontal=True, key="att_session_type_toggle")
+
+                target_lab_group = "All"
+                if att_type == "🧪 Practical Lab":
+                    st.divider()
+                    target_lab_group = st.selectbox(
+                        "🔬 Which Lab Rotation Group is performing today?", 
+                        ["Group 1", "Group 2", "Group 3", "Group 4"],
+                        key="att_lab_group_filter"
+                    )
+
+                if sub_id:
+                    query_params = [sel_sem_id, sel_section]
+                    group_clause = ""
+                    
+                    if att_type == "🧪 Practical Lab":
+                        group_clause = "AND lab_group = %s"
+                        query_params.append(target_lab_group)
+
+                    students_df = pd.read_sql_query(f"""
+                        SELECT id as student_id, full_name as name, username as roll 
+                        FROM users 
+                        WHERE role = 'student' AND semester_id = %s AND section = %s {group_clause}
+                        ORDER BY username ASC;
+                    """, att_conn, params=tuple(query_params))
+
+                    if students_df.empty:
+                        st.info(f"No students found registered under Section {sel_section} {f'[{target_lab_group}]' if att_type == '🧪 Practical Lab' else ''}.")
+                    else:
+                        header_label = f"Section {sel_section}" if att_type == "📝 Theory Class" else f"Section {sel_section} [{target_lab_group}]"
+                        st.write(f"Marking attendance for **{header_label}** on: **{datetime.now(NST).strftime('%B %d, %Y')}**")
+                        
+                        students_df["present"] = True  
+                        
+                        edited_att_df = st.data_editor(
+                            students_df,
+                            column_config={
+                                "student_id": None,
+                                "roll": st.column_config.TextColumn("Roll No.", disabled=True),
+                                "name": st.column_config.TextColumn("Student Name", disabled=True),
+                                "present": st.column_config.CheckboxColumn("Attendance Status", default=True)
+                            },
+                            use_container_width=True,
+                            hide_index=True,
+                            key="daily_attendance_grid"
+                        )
+
+                        # Create the historical log table seamlessly inside PostgreSQL if it doesn't exist
+                        with att_conn.cursor() as log_cur:
+                            log_cur.execute("""
+                                CREATE TABLE IF NOT EXISTS attendance_logs (
+                                    id SERIAL PRIMARY KEY,
+                                    student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                                    subject_id INTEGER REFERENCES subjects(id) ON DELETE CASCADE,
+                                    log_date VARCHAR(50),
+                                    session_type VARCHAR(50),
+                                    status VARCHAR(50),
+                                    CONSTRAINT unique_attendance_entry UNIQUE(student_id, subject_id, log_date, session_type)
+                                );
+                            """)
+                        att_conn.commit()
+
+                        st.divider()
+                        st.markdown("### 📥 Export Master Cumulative Register")
+                        session_label = "Theory" if att_type == "📝 Theory Class" else "Practical"
+                        
+                        log_data = pd.read_sql_query("""
+                            SELECT u.username as roll_no, u.full_name as student_name, l.log_date, l.status
+                            FROM attendance_logs l
+                            JOIN users u ON l.student_id = u.id
+                            WHERE l.subject_id = %s AND l.session_type = %s AND u.section = %s
+                            ORDER BY l.log_date ASC, u.username ASC;
+                        """, att_conn, params=(sub_id, session_label, sel_section))
+                        
+                        if not log_data.empty:
+                            master_pivot = log_data.pivot(index=["roll_no", "student_name"], columns="log_date", values="status").reset_index()
+                            present_col = f"{session_label} Present"
+                            total_col = f"{session_label} Total"
+                            
+                            master_pivot[present_col] = log_data[log_data['status'] == 'Present'].groupby('roll_no').size().reindex(master_pivot['roll_no'], fill_value=0).values
+                            master_pivot[total_col] = log_data.groupby('roll_no').size().reindex(master_pivot['roll_no'], fill_value=0).values
+                            master_pivot['Percentage (%)'] = master_pivot.apply(lambda r: round((r[present_col]/r[total_col]*100), 2) if r[total_col] > 0 else 0.0, axis=1)
+                            
+                            current_date_str = datetime.now(NST).strftime("%B %d, %Y")
+                            header_info = f"Master Cumulative Register,,Generated On:,{current_date_str},Subject:,{sel_sub_name},Type:,{session_label} Log\n"
+                            spacer_row = "," * (len(master_pivot.columns) - 1) + "\n"
+                            
+                            csv_output = master_pivot.to_csv(index=False)
+                            final_download_bytes = (header_info + spacer_row + csv_output).encode('utf-8')
+                            
+                            st.download_button(
+                                label=f"📥 Download Complete {session_label} Date-by-Date Register",
+                                data=final_download_bytes,
+                                file_name=f"Master_{session_label}_Register_{sel_sub_name.replace(' ', '_')}.csv",
+                                mime="text/csv",
+                                use_container_width=True,
+                                key=f"download_master_register_{session_label}"
+                            )
+                        else:
+                            st.info("No historical date logs found yet for this subject. Submit a daily roll call first.")
+
+                        st.divider()
+                        chosen_date = st.date_input("📅 Select Class/Lab Date for this Roll Call:", value=datetime.now(NST).date(), key="attendance_calendar_picker")
+                        target_date_str = chosen_date.strftime("%Y-%m-%d")
+
+                        if st.button(f"🚀 Submit & Log Attendance for {target_date_str}", use_container_width=True, type="primary"):
+                            sub_conn = get_db_connection()
+                            with sub_conn.cursor() as cur:
+                                for _, r in edited_att_df.iterrows():
+                                    s_id = int(r['student_id'])
+                                    val_present = r['present']
+                                    status_str = "Present" if bool(val_present) else "Absent"
+                                    
+                                    # PostgreSQL upsert pattern matching criteria parameters
+                                    cur.execute("""
+                                        INSERT INTO attendance_logs (student_id, subject_id, log_date, session_type, status)
+                                        VALUES (%s, %s, %s, %s, %s)
+                                        ON CONFLICT ON CONSTRAINT unique_attendance_entry
+                                        DO UPDATE SET status = excluded.status;
+                                    """, (s_id, sub_id, target_date_str, session_label, status_str))
+                                    
+                                    # Recalculate tally summaries immediately to feed the grading ledgers smoothly
+                                    if session_label == "Theory":
+                                        cur.execute("SELECT COUNT(*) FROM attendance_logs WHERE student_id = %s AND subject_id = %s AND session_type = 'Theory' AND status = 'Present';", (s_id, sub_id))
+                                        p_count = cur.fetchone()[0]
+                                        cur.execute("SELECT COUNT(*) FROM attendance_logs WHERE student_id = %s AND subject_id = %s AND session_type = 'Theory';", (s_id, sub_id))
+                                        t_count = cur.fetchone()[0]
+                                        
+                                        cur.execute("""
+                                            INSERT INTO student_marks (student_id, subject_id, t_att_present, t_att_total)
+                                            VALUES (%s, %s, %s, %s)
+                                            ON CONFLICT (student_id, subject_id) DO UPDATE SET
+                                                t_att_present = excluded.t_att_present,
+                                                t_att_total = excluded.t_att_total;
+                                        """, (s_id, sub_id, p_count, t_count))
+                                    else:
+                                        cur.execute("SELECT COUNT(*) FROM attendance_logs WHERE student_id = %s AND subject_id = %s AND session_type = 'Practical' AND status = 'Present';", (s_id, sub_id))
+                                        p_count = cur.fetchone()[0]
+                                        cur.execute("SELECT COUNT(*) FROM attendance_logs WHERE student_id = %s AND subject_id = %s AND session_type = 'Practical';", (s_id, sub_id))
+                                        t_count = cur.fetchone()[0]
+                                        
+                                        cur.execute("""
+                                            INSERT INTO student_marks (student_id, subject_id, p_att_present, p_att_total)
+                                            VALUES (%s, %s, %s, %s)
+                                            ON CONFLICT (student_id, subject_id) DO UPDATE SET
+                                                p_att_present = excluded.p_att_present,
+                                                p_att_total = excluded.p_att_total;
+                                        """, (s_id, sub_id, p_count, t_count))
+                                        
+                            sub_conn.commit()
+                            sub_conn.close()
+                            st.success(f"✅ Attendance for {target_date_str} logged! Cumulative grading matrices updated successfully.")
+                            st.balloons()
+                            st.rerun()
+                att_conn.close()
+
+        # ================= SUB-VIEW 3: INTERNAL THEORY LEDGER (40 MARKS) =================
+        elif view_mode == "📝 Internal Theory Ledger (40 Marks)":
+            st.markdown("## 📝 Internal Theory Assessment Ledger (40 Marks)")
+            
+            grad_conn = get_db_connection()
+            sems_grading = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", grad_conn)
+            
+            if sems_grading.empty:
+                st.warning("Please create a semester first.")
+                grad_conn.close()
+            else:
+                col_sel1, col_sel2 = st.columns(2)
+                with col_sel1:
+                    sel_sem_name = st.selectbox("Semester", sems_grading["name"], key="grad_sem_sel_t")
+                    sel_sem_id = int(sems_grading[sems_grading["name"] == sel_sem_name]["id"].values[0])
+                with col_sel2:
+                    subjects_grading = pd.read_sql_query("SELECT * FROM subjects WHERE semester_id = %s ORDER BY name ASC;", grad_conn, params=(sel_sem_id,))
+                    if subjects_grading.empty:
+                        st.error("No subjects found.")
+                        sel_sub_id = None
+                    else:
+                        sel_sub_name = st.selectbox("Subject", subjects_grading["name"], key="grad_sub_sel_t")
+                        sel_sub_id = int(subjects_grading[subjects_grading["name"] == sel_sub_name]["id"].values[0])
+
+                if 'sel_sub_id' in locals() and sel_sub_id:
+                    st.divider()
+                    st.markdown("### 📊 Step 1: Input Raw Continuous Scores")
+                    
+                    query = """
+                        SELECT u.id as student_id, u.username as roll, u.full_name as name,
+                        COALESCE(m.t_att_present, 0) as t_att_present,
+                        COALESCE(m.t_att_total, 34) as t_att_total,
+                        COALESCE(m.t_hw_raw, 0.0) as t_hw_raw,
+                        COALESCE(m.t_mid_raw, 0.0) as t_mid_raw,
+                        COALESCE(m.t_final_raw, 0.0) as t_final_raw,
+                        COALESCE(m.t_other_raw, 0.0) as t_other_raw,
+                        COALESCE(m.t_grace, 0.0) as t_grace
+                        FROM users u 
+                        LEFT JOIN student_marks m ON u.id = m.student_id AND m.subject_id = %s
+                        WHERE u.role = 'student' AND u.semester_id = %s
+                        ORDER BY u.username ASC;
+                    """
+                    df_t = pd.read_sql_query(query, grad_conn, params=(sel_sub_id, sel_sem_id))
+                    
+                    edited_t = st.data_editor(
+                        df_t, 
+                        column_config={
+                            "student_id": None, 
+                            "roll": st.column_config.TextColumn("Roll No.", disabled=True),
+                            "name": st.column_config.TextColumn("Student Name", disabled=True),
+                            "t_att_present": st.column_config.NumberColumn("Attended", min_value=0, step=1),
+                            "t_att_total": st.column_config.NumberColumn("Total Classes", min_value=1, step=1),
+                            "t_hw_raw": st.column_config.NumberColumn("Assignments"),
+                            "t_mid_raw": st.column_config.NumberColumn("Mid-Term (%)"),
+                            "t_final_raw": st.column_config.NumberColumn("Final Internal"),
+                            "t_other_raw": st.column_config.NumberColumn("Tutorials/Other"),
+                            "t_grace": st.column_config.NumberColumn("Grace (Max 5)", min_value=0.0, max_value=5.0)
+                        }, 
+                        use_container_width=True, 
+                        hide_index=True, 
+                        key="theory_editor"
+                    )
+
+                    if st.button("💾 Synchronize Theory Marks", use_container_width=True, type="primary"):
+                        sync_conn = get_db_connection()
+                        with sync_conn.cursor() as cur:
+                            for _, r in edited_t.iterrows():
+                                cur.execute("""
+                                    INSERT INTO student_marks (
+                                        student_id, subject_id, t_att_present, t_att_total,
+                                        t_hw_raw, t_mid_raw, t_final_raw, t_other_raw, t_grace
+                                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                    ON CONFLICT(student_id, subject_id) DO UPDATE SET 
+                                        t_att_present = excluded.t_att_present,
+                                        t_att_total = excluded.t_att_total,
+                                        t_hw_raw = excluded.t_hw_raw,
+                                        t_mid_raw = excluded.t_mid_raw,
+                                        t_final_raw = excluded.t_final_raw,
+                                        t_other_raw = excluded.t_other_raw,
+                                        t_grace = excluded.t_grace;
+                                """, (
+                                    int(r['student_id']), int(sel_sub_id),
+                                    int(r['t_att_present']), int(r['t_att_total']),
+                                    float(r['t_hw_raw']), float(r['t_mid_raw']),
+                                    float(r['t_final_raw']), float(r['t_other_raw']), float(r['t_grace'])
+                                ))
+                        sync_conn.commit()
+                        sync_conn.close()
+                        st.success("✅ Theory marks successfully synchronized and locked inside PostgreSQL.")
+                        st.rerun()
+
+                    st.divider()
+                    st.subheader("🎯 Step 2: Processed Theory Totals")
+                    
+                    res_t = []
+                    calc_conn = get_db_connection()
+                    for _, r in edited_t.iterrows():
+                        calc_res = calculate_internal_theory(r.to_dict(), sel_sub_id, calc_conn)
+                        res_t.append({
+                            "Roll No.": r['roll'],
+                            "Student Name": r['name'],
+                            "Total (/40)": f"{calc_res[0]:.2f}",
+                            "Eligibility": "✅ Eligible" if calc_res[1] else "❌ Ineligible"
+                        })
+                    calc_conn.close()
+                    st.dataframe(res_t, use_container_width=True, hide_index=True)
+            grad_conn.close()
+
+        # ================= SUB-VIEW 4: PRACTICAL LEDGER (25 MARKS) =================
+        elif view_mode == "🧪 Practical Ledger (25 Marks)":
+            st.markdown("## 🧪 Practical Assessment Ledger (25 Marks)")
+            
+            grad_conn_p = get_db_connection()
+            sems_grading_p = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", grad_conn_p)
+            
+            if sems_grading_p.empty:
+                st.warning("Please create a semester first.")
+                grad_conn_p.close()
+            else:
+                col_sel_p1, col_sel_p2 = st.columns(2)
+                with col_sel_p1:
+                    sel_sem_name_p = st.selectbox("Semester", sems_grading_p["name"], key="grad_sem_sel_p")
+                    sel_sem_id_p = int(sems_grading_p[sems_grading_p["name"] == sel_sem_name_p]["id"].values[0])
+                with col_sel_p2:
+                    subjects_grading_p = pd.read_sql_query("SELECT * FROM subjects WHERE semester_id = %s ORDER BY name ASC;", grad_conn_p, params=(sel_sem_id_p,))
+                    if subjects_grading_p.empty:
+                        st.error("No subjects found.")
+                        sel_sub_id_p = None
+                    else:
+                        sel_sub_name_p = st.selectbox("Subject", subjects_grading_p["name"], key="grad_sub_sel_p")
+                        sel_sub_id_p = int(subjects_grading_p[subjects_grading_p["name"] == sel_sub_name_p]["id"].values[0])
+
+                if 'sel_sub_id_p' in locals() and sel_sub_id_p:
+                    st.divider()
+                    st.markdown("### 📊 Step 1: Input Raw Practical & Lab Scores")
+                    
+                    query_p = """
+                        SELECT u.id as student_id, u.username as roll, u.full_name as name,
+                        COALESCE(m.p_att_present, 0) as p_att_present,
+                        COALESCE(m.p_att_total, 12) as p_att_total,
+                        COALESCE(m.p_perf_raw, 0.0) as p_perf_raw,
+                        COALESCE(m.p_report_raw, 0.0) as p_report_raw,
+                        COALESCE(m.p_test_raw, 0.0) as p_test_raw,
+                        COALESCE(m.p_viva_raw, 0.0) as p_viva_raw
+                        FROM users u 
+                        LEFT JOIN student_marks m ON u.id = m.student_id AND m.subject_id = %s
+                        WHERE u.role = 'student' AND u.semester_id = %s
+                        ORDER BY u.username ASC;
+                    """
+                    df_p = pd.read_sql_query(query_p, grad_conn_p, params=(sel_sub_id_p, sel_sem_id_p))
+                    
+                    edited_p = st.data_editor(
+                        df_p, 
+                        column_config={
+                            "student_id": None, 
+                            "roll": st.column_config.TextColumn("Roll No.", disabled=True),
+                            "name": st.column_config.TextColumn("Student Name", disabled=True),
+                            "p_att_present": st.column_config.NumberColumn("Lab Attended", min_value=0, step=1),
+                            "p_att_total": st.column_config.NumberColumn("Total Labs", min_value=1, step=1),
+                            "p_perf_raw": st.column_config.NumberColumn("Lab Performance"),
+                            "p_report_raw": st.column_config.NumberColumn("Lab Reports"),
+                            "p_test_raw": st.column_config.NumberColumn("Practical Test"),
+                            "p_viva_raw": st.column_config.NumberColumn("Viva Voce")
+
+
     
