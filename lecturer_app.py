@@ -363,3 +363,315 @@ def get_greeting():
         return "Good afternoon 🌤️"
     else:
         return "Good evening 🌙"
+# ================= DEADLINE AND COUNTDOWN CALCULATION METRICS =================
+
+def get_deadline_status(deadline_str):
+    """
+    Evaluates calendar dates to map out task countdown status matrices.
+    Returns: (days_remaining, status_string, indicator_emoji)
+    """
+    try:
+        deadline = datetime.strptime(str(deadline_str).strip(), "%Y-%m-%d")
+        today = datetime.now(NST)
+        
+        # Strip out hour/minute data for an accurate day-by-day structural calculation gap
+        deadline_date = deadline.date()
+        today_date = today.date()
+        
+        days_remaining = (deadline_date - today_date).days
+        
+        if days_remaining < 0:
+            return days_remaining, "Overdue", "🔴"
+        elif days_remaining == 0:
+            return days_remaining, "Due Today", "export_status_orange"  # Use visual strings for safe UI interpretation
+        elif days_remaining <= 3:
+            return days_remaining, "Due Soon", "🟡"
+        elif days_remaining <= 7:
+            return days_remaining, "This Week", "🟢"
+        else:
+            return days_remaining, "Upcoming", "🔵"
+    except:
+        return None, "Unknown", "⚪"
+
+
+def format_deadline_display(deadline_str):
+    """
+    Constructs a highly visible text timeline indicator complete with relative countdowns.
+    """
+    days, status, color = get_deadline_status(deadline_str)
+    
+    # Clean up standard text output matching for display panels
+    emoji_color = "🟠" if color == "export_status_orange" else color
+    
+    if days is None:
+        return f"{emoji_color}  {deadline_str}"
+    elif days < 0:
+        return f"{emoji_color}  {deadline_str} ({abs(days)} days overdue)"
+    elif days == 0:
+        return f"{emoji_color}  {deadline_str} (Due Today!)"
+    elif days == 1:
+        return f"{emoji_color}  {deadline_str} (Tomorrow)"
+    else:
+        return f"{emoji_color}  {deadline_str} ({days} days left)"
+
+
+# ================= SYSTEM STORAGE ANALYSIS UTILITIES =================
+
+def cleanup_orphaned_files():
+    """
+    Scans physical storage directories and removes files no longer tracked in Neon.
+    Returns: (deleted_count, space_freed_mb)
+    """
+    deleted_count = 0
+    space_freed = 0
+    db_files = set()
+    
+    # Establish connection mapping arrays
+    cleanup_conn = get_db_connection()
+    cur = cleanup_conn.cursor()
+    
+    # 1. Gather assignment paths
+    cur.execute("SELECT question_file FROM assignments WHERE question_file IS NOT NULL AND question_file != '';")
+    for row in cur.fetchall():
+        if row[0]: db_files.add(row[0])
+        
+    # 2. Gather student submission paths
+    cur.execute("SELECT submission_file FROM submissions WHERE submission_file IS NOT NULL AND submission_file != '';")
+    for row in cur.fetchall():
+        if row[0]: db_files.add(row[0])
+        
+    # 3. Gather uploaded study material paths
+    cur.execute("SELECT file_path FROM study_materials WHERE file_path IS NOT NULL AND file_path != '';")
+    for row in cur.fetchall():
+        if row[0]: db_files.add(row[0])
+        
+    cur.close()
+    cleanup_conn.close()
+    
+    target_folders = ['assignment_files', 'submission_files', 'study_materials']
+    
+    for folder in target_folders:
+        if os.path.exists(folder):
+            for filename in os.listdir(folder):
+                file_path = os.path.join(folder, filename)
+                
+                if file_path not in db_files and os.path.isfile(file_path):
+                    try:
+                        file_size = os.path.getsize(file_path)
+                        os.remove(file_path)
+                        deleted_count += 1
+                        space_freed += file_size
+                    except:
+                        continue
+    
+    space_freed_mb = space_freed / (1024 * 1024)
+    return deleted_count, round(space_freed_mb, 2)
+
+
+def get_storage_stats():
+    """
+    Compiles space utilization telemetry statistics across all container folders.
+    """
+    stats = {}
+    target_folders = {
+        'assignment_files': 'Assignment Questions',
+        'submission_files': 'Student Submissions',
+        'study_materials': 'Study Materials',
+        'data': 'Temporary Enclave Cache'
+    }
+    
+    for folder, label in target_folders.items():
+        if os.path.exists(folder):
+            total_size = 0
+            file_count = 0
+            
+            for dirpath, _, filenames in os.walk(folder):
+                for filename in filenames:
+                    file_path = os.path.join(dirpath, filename)
+                    if os.path.isfile(file_path):
+                        try:
+                            total_size += os.path.getsize(file_path)
+                            file_count += 1
+                        except:
+                            continue
+            
+            stats[label] = {
+                'size_mb': round(total_size / (1024 * 1024), 2),
+                'file_count': file_count
+            }
+    return stats
+
+
+# ================= DATA CONSTRAINTS & VALIDATION BARRIERS =================
+
+MAX_FILE_SIZE_MB = 25  
+ALLOWED_ASSIGNMENT_TYPES = ['pdf']
+ALLOWED_SUBMISSION_TYPES = ['pdf']
+ALLOWED_MATERIAL_TYPES = ['pdf', 'docx', 'pptx', 'zip', 'jpg', 'png']
+
+def validate_file_upload(uploaded_file, allowed_types, max_size_mb=MAX_FILE_SIZE_MB):
+    """
+    Enforces strict size limits and validates magic-number extensions.
+    Returns: (is_valid, error_or_success_message)
+    """
+    if uploaded_file is None:
+        return False, "No file object uploaded to data stream buffer channel."
+    
+    file_extension = uploaded_file.name.split('.')[-1].lower()
+    if file_extension not in allowed_types:
+        return False, f"Invalid file type extension detected. Permitted formats: {', '.join(allowed_types)}"
+    
+    file_size_mb = uploaded_file.size / (1024 * 1024)
+    if file_size_mb > max_size_mb:
+        return False, f"File size payload exceeds threshold. Peak maximum: {max_size_mb} MB (Uploaded size: {file_size_mb:.2f} MB)"
+    
+    if file_extension == 'pdf':
+        uploaded_file.seek(0)
+        header_bytes = uploaded_file.read(5)
+        uploaded_file.seek(0)
+        if header_bytes != b'%PDF-':
+            return False, "File stream validation failed: Corrupted or masked structure layout encountered."
+            
+    return True, "File payload fully matches standard validation criteria."
+
+
+def check_deadline_passed(deadline_str):
+    """
+    Evaluates locking parameters based on absolute dates.
+    Returns: (is_late, evaluation_message)
+    """
+    try:
+        deadline_date = datetime.strptime(str(deadline_str).strip(), '%Y-%m-%d').date()
+        current_date = datetime.now(NST).date()
+        
+        if current_date > deadline_date:
+            days_late = (current_date - deadline_date).days
+            return True, f"Deadline passed {days_late} days ago"
+        return False, "Timeline remains open for submission entries."
+    except:
+        return False, "Invalid tracking date configuration format handled."
+
+
+# ================= MULTI-TENANT SEARCH ENGINES =================
+
+def search_students(query, semester_id=None):
+    """
+    Queries active student profiles inside your multi-tenant workspace using PostgreSQL LIKE blocks.
+    """
+    clean_query = query.strip().lower()
+    if not clean_query:
+        return pd.DataFrame()
+        
+    search_conn = get_db_connection()
+    search_str = f"%{clean_query}%"
+    
+    # PostgreSQL queries use positional %s placeholders and case-insensitive ILIKE patterns
+    if semester_id:
+        results_df = pd.read_sql_query("""
+            SELECT u.id, u.full_name, u.username, s.name as semester, u.section, u.lab_group
+            FROM users u
+            LEFT JOIN semesters s ON u.semester_id = s.id
+            WHERE u.role = 'student' AND u.org_id = 1 AND u.semester_id = %s
+              AND (LOWER(u.full_name) LIKE %s OR LOWER(u.username) LIKE %s)
+            ORDER BY u.full_name ASC;
+        """, search_conn, params=(int(semester_id), search_str, search_str))
+    else:
+        results_df = pd.read_sql_query("""
+            SELECT u.id, u.full_name, u.username, s.name as semester, u.section, u.lab_group
+            FROM users u
+            LEFT JOIN semesters s ON u.semester_id = s.id
+            WHERE u.role = 'student' AND u.org_id = 1
+              AND (LOWER(u.full_name) LIKE %s OR LOWER(u.username) LIKE %s)
+            ORDER BY u.full_name ASC;
+        """, search_conn, params=(search_str, search_str))
+        
+    search_conn.close()
+    return results_df
+# ================= INTERNAL THEORY MARK CALCULATION ENGINE =================
+
+def calculate_internal_theory(row, subject_id, db_conn):
+    """
+    Dynamically fetches subject marking configurations from PostgreSQL 
+    and calculates weighted theory marks with a strict 70% attendance gate.
+    """
+    with db_conn.cursor() as cur:
+        # Fetch the active subject's custom rules using standard %s placeholder mapping
+        cur.execute("SELECT * FROM subject_schemes WHERE subject_id = %s;", (int(subject_id),))
+        columns = [desc[0] for desc in cur.description]
+        scheme_row = cur.fetchone()
+    
+    # Fallback default fallback matrix if rules haven't been locked yet
+    if not scheme_row:
+        scheme = {
+            'theory_full_marks': 40.0,
+            't_weight_att': 0.10, 't_weight_hw': 0.25, 't_weight_other': 0.15,
+            't_weight_mid': 0.25, 't_weight_final': 0.25
+        }
+    else:
+        scheme = dict(zip(columns, scheme_row))
+
+    # 1. Attendance Ratio & Score Allocation Math
+    att_present = float(row.get('t_att_present', 0))
+    att_total = float(row.get('t_att_total', 34))
+    
+    att_ratio = att_present / att_total if att_total > 0 else 0.0
+    att_score = att_ratio * (float(scheme['theory_full_marks']) * float(scheme['t_weight_att']))
+    
+    # 2. Scale Continuous Assessment Percentages (0-100) to Weights
+    hw_score = (float(row.get('t_hw_raw', 0)) / 100) * (float(scheme['theory_full_marks']) * float(scheme['t_weight_hw']))
+    mid_score = (float(row.get('t_mid_raw', 0)) / 100) * (float(scheme['theory_full_marks']) * float(scheme['t_weight_mid']))
+    final_score = (float(row.get('t_final_raw', 0)) / 100) * (float(scheme['theory_full_marks']) * float(scheme['t_weight_final']))
+    other_score = (float(row.get('t_other_raw', 0)) / 100) * (float(scheme['theory_full_marks']) * float(scheme['t_weight_other']))
+    
+    raw_total = att_score + hw_score + mid_score + final_score + other_score
+    
+    # 3. Enforce the Strict 70% Attendance Gate Barrier
+    is_eligible_grace = att_ratio >= 0.70
+    final_total = raw_total
+    
+    if is_eligible_grace and float(row.get('t_grace', 0)) > 0:
+        final_total += min(float(row.get('t_grace', 0)), 5.0) 
+        
+    return round(final_total, 2), is_eligible_grace
+
+
+# ================= INTERNAL PRACTICAL MARK CALCULATION ENGINE =================
+
+def calculate_internal_practical(row, subject_id, db_conn):
+    """
+    Dynamically fetches laboratory configurations and calculates 
+    weighted practical internal marks out of fluid/hydraulic lab modules.
+    """
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT * FROM subject_schemes WHERE subject_id = %s;", (int(subject_id),))
+        columns = [desc[0] for desc in cur.description]
+        scheme_row = cur.fetchone()
+        
+    if not scheme_row:
+        scheme = {
+            'prac_full_marks': 25.0,
+            'p_weight_att': 0.20, 'p_weight_perf': 0.20, 'p_weight_report': 0.20,
+            'p_weight_test': 0.20, 'p_weight_viva': 0.20
+        }
+    else:
+        scheme = dict(zip(columns, scheme_row))
+
+    full_p = float(scheme['prac_full_marks'])
+    
+    # Laboratory Grid Evaluation Array
+    p_att_present = float(row.get('p_att_present', 0))
+    p_att_total = float(row.get('p_att_total', 12))
+    
+    att_ratio = p_att_present / p_att_total if p_att_total > 0 else 0.0
+    att_score = att_ratio * (full_p * float(scheme['p_weight_att']))
+    
+    perf_score = (float(row.get('p_perf_raw', 0)) / 100) * (full_p * float(scheme['p_weight_perf']))
+    report_score = (float(row.get('p_report_raw', 0)) / 100) * (full_p * float(scheme['p_weight_report']))
+    test_score = (float(row.get('p_test_raw', 0)) / 100) * (full_p * float(scheme['p_weight_test']))
+    viva_score = (float(row.get('p_viva_raw', 0)) / 100) * (full_p * float(scheme['p_weight_viva']))
+    
+    raw_total = att_score + perf_score + report_score + test_score + viva_score
+    is_eligible = att_ratio >= 0.70
+    
+    return round(raw_total, 2), is_eligible
+    
