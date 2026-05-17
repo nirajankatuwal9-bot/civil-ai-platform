@@ -255,7 +255,24 @@ def require_login():
         st.session_state.clear()
         st.rerun()
 
+# ================= CRYPTOGRAPHIC PASSWORD HELPERS =================
 
+def hash_password(password_string):
+    """
+    Generates a secure, salted bcrypt hash string from a raw password.
+    """
+    return bcrypt.hashpw(password_string.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+
+def check_password(password_string, hashed_string):
+    """
+    Verifies a raw password string against its corresponding stored bcrypt hash value.
+    Returns: True if matched, False otherwise.
+    """
+    try:
+        return bcrypt.checkpw(password_string.encode('utf-8'), hashed_string.encode('utf-8'))
+    except Exception:
+        return False
 # ================= SPACE-PROOF LOGIN FLOW GATE =================
 
 if not st.session_state.get("logged_in", False):
