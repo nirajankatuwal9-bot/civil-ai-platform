@@ -188,6 +188,14 @@ def run_postgres_migration():
 
 # Execute infrastructure engine verification
 run_postgres_migration()
+# ================= SESSION INITIALIZATION =================
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.user_id = None
+    st.session_state.role = None
+    st.session_state.username = None
+    st.session_state.org_id = 1  # 🌐 ➕ SaaS MULTI-TENANT INITIALIZER ROOT
 # ================= FIXED MULTI-TENANT PROVISIONING LOGIC =================
 
 def seed_default_lecturer():
@@ -218,14 +226,7 @@ def seed_default_lecturer():
 
 # Execute default system seeding operation
 seed_default_lecturer()
-# ================= SESSION INITIALIZATION =================
 
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-    st.session_state.user_id = None
-    st.session_state.role = None
-    st.session_state.username = None
-    st.session_state.org_id = 1  # 🌐 ➕ SaaS MULTI-TENANT INITIALIZER ROOT
 # ================= SESSION SECURITY GATES =================
 
 # Session timeout window configuration tracking (30 minutes)
