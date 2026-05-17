@@ -995,158 +995,160 @@ def create_announcement(title, message, semester_id, priority, user_id, expires_
     except Exception as e:
         return False, f"Cloud database query rejection link: {str(e)}"
 
-
 # =========================================================================
     # TAB 4: SUBMISSIONS & AI GRADING ENGINE PANEL
     # =========================================================================
     with tabs[4]:
         st.subheader("Student Submissions & AI Grading")
 
-        # Open isolated connection context to pull filter dependencies safely
-        sub_panel_conn = get_db_connection()
-        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", sub_panel_conn)
-        sub_panel_conn.close()
-
-        if sems.empty:
-            st.info("📭 No semesters found. Please create a semester in the 'Semesters' tab first.")
-        else:
-            c_sub1, c_sub2 = st.columns(2)
-            with c_sub1:
-                selected_sem = st.selectbox("Filter Submissions by Semester", ["All"] + sems["name"].tolist(), key="filter_sem")
-            with c_sub2:
-                selected_sec = st.selectbox("Filter Submissions by Section", ["All Sections", "Section A", "Section B"], key="filter_sec_submissions")
-
-            # Dynamically build standard PostgreSQL conditional parameters
-            params = []
-            where_clauses = ["1=1"]
-
-            if selected_sem != "All":
-                sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
-                where_clauses.append("sem.id = %s")
-                params.append(sem_id)
-
-            if selected_sec != "All Sections":
-                sec_letter = "A" if selected_sec == "Section A" else "B"
-                where_clauses.append("u.section = %s")
-                params.append(sec_letter)
-
-            where_stmt = " AND ".join(where_clauses)
-
-            # Master query execution extracting submission metadata files
+        try:
+            # Open isolated connection context to pull filter dependencies safely
             sub_panel_conn = get_db_connection()
-            df = pd.read_sql_query(f"""
-                SELECT
-                    subm.id, u.username, u.full_name, u.section,
-                    sem.name as semester, s.name as subject, a.title as assignment,
-                    a.rubric, subm.submission_time, subm.submission_file, subm.marks, subm.ai_summary
-                FROM submissions subm
-                JOIN users u ON subm.student_id = u.id 
-                JOIN assignments a ON subm.assignment_id = a.id
-                JOIN subjects s ON a.subject_id = s.id
-                JOIN semesters sem ON s.semester_id = sem.id
-                WHERE {where_stmt}
-                ORDER BY subm.submission_time DESC;
-            """, sub_panel_conn, params=tuple(params) if params else None)
+            sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", sub_panel_conn)
             sub_panel_conn.close()
 
-            if df.empty:
-                st.info("🔍 No student assignment uploads found matching those filter selections.")
+            if sems.empty:
+                st.info("📭 No semesters found. Please create a semester in the 'Semesters' tab first.")
             else:
-                st.dataframe(
-                    df[["semester", "section", "subject", "assignment", "username", "full_name", "submission_time", "marks"]],
-                    column_config={
-                        "semester": "Semester", "section": "Sec", "subject": "Subject",
-                        "assignment": "Assignment", "username": "Roll No.", "full_name": "Student Name",
-                        "submission_time": "Submission Time", "marks": "Marks"
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
-                st.divider()
-                st.subheader("AI Grading Tool Workspace")
+                c_sub1, c_sub2 = st.columns(2)
+                with c_sub1:
+                    selected_sem = st.selectbox("Filter Submissions by Semester", ["All"] + sems["name"].tolist(), key="filter_sem")
+                with c_sub2:
+                    selected_sec = st.selectbox("Filter Submissions by Section", ["All Sections", "Section A", "Section B"], key="filter_sec_submissions")
 
-                for _, row in df.iterrows():
-                    expander_title = f"{row['username']} [Sec {row['section']}] - {row['assignment']} ({row['subject']})"
-                    
-                    with st.expander(expander_title):
-                        col1, col2 = st.columns([2, 1])
+                # Dynamically build standard PostgreSQL conditional parameters
+                params = []
+                where_clauses = ["1=1"]
 
-                        with col1:
-                            st.write(f"**Student:** {row['full_name']} ({row['username']})")
-                            st.write(f"**Class Group:** {row['semester']} | **Section:** {row['section']}")
-                            st.write(f"**Subject:** {row['subject']} | **Assignment:** {row['assignment']}")
-                            st.write(f"**Submitted:** {row['submission_time']}")
+                if selected_sem != "All":
+                    sem_id = int(sems[sems["name"] == selected_sem]["id"].values[0])
+                    where_clauses.append("sem.id = %s")
+                    params.append(sem_id)
 
-                            if row['marks'] and str(row['marks']).strip():
-                                st.metric("Current Marks", f"{row['marks']}/10")
-                            else:
-                                st.info("Not graded yet")
+                if selected_sec != "All Sections":
+                    sec_letter = "A" if selected_sec == "Section A" else "B"
+                    where_clauses.append("u.section = %s")
+                    params.append(sec_letter)
 
-                        with col2:
-                            if row["submission_file"] and os.path.exists(row["submission_file"]):
-                                with open(row["submission_file"], "rb") as f:
-                                    st.download_button(
-                                        "Download Submission PDF", f,
-                                        file_name=os.path.basename(row["submission_file"]),
-                                        key=f"dl_{row['id']}"
-                                    )
-                        st.divider()
+                where_stmt = " AND ".join(where_clauses)
 
-                        if row["submission_file"] and os.path.exists(row["submission_file"]):
-                            col_a, col_b = st.columns(2)
-                                
-                            with col_a:
-                                if st.button("AI Grade", key=f"grade_{row['id']}"):
-                                    if not row['rubric'] or not str(row['rubric']).strip():
-                                        st.warning("Please enter a rubric/model answer first inside your Assignment settings.")
-                                    else:
-                                        with st.spinner("AI processing drawing calculations..."):
-                                            try:
-                                                result = vision_grade(row["submission_file"], row["rubric"])
-                                                st.markdown("### **AI Analysis Response:**")
-                                                st.write(result)
+                # Master query execution extracting submission metadata files
+                sub_panel_conn = get_db_connection()
+                df = pd.read_sql_query(f"""
+                    SELECT
+                        subm.id, u.username, u.full_name, u.section,
+                        sem.name as semester, s.name as subject, a.title as assignment,
+                        a.rubric, subm.submission_time, subm.submission_file, subm.marks, subm.ai_summary
+                    FROM submissions subm
+                    JOIN users u ON subm.student_id = u.id 
+                    JOIN assignments a ON subm.assignment_id = a.id
+                    JOIN subjects s ON a.subject_id = s.id
+                    JOIN semesters sem ON s.semester_id = sem.id
+                    WHERE {where_stmt}
+                    ORDER BY subm.submission_time DESC;
+                """, sub_panel_conn, params=tuple(params) if params else None)
+                sub_panel_conn.close()
 
-                                                if result and "Error" not in str(result):
-                                                    extracted_score = extract_marks(result)
-                                                    if extracted_score is not None:
-                                                        update_conn = get_db_connection()
-                                                        with update_conn.cursor() as up_cur:
-                                                            up_cur.execute("UPDATE submissions SET marks = %s, ai_summary = %s WHERE id = %s;", (str(extracted_score), result, int(row["id"])))
-                                                        update_conn.commit()
-                                                        update_conn.close()
-                                                        st.success(f"Updated marks automatically: {extracted_score}/10")
-                                                        st.rerun()
-                                                    else:
-                                                        st.warning("Could not extract a clean integer score automatically. Map it manually on the right panel.")
-                                                        update_conn = get_db_connection()
-                                                        with update_conn.cursor() as up_cur:
-                                                            up_cur.execute("UPDATE submissions SET ai_summary = %s WHERE id = %s;", (str(result), int(row["id"])))
-                                                        update_conn.commit()
-                                                        update_conn.close()
-                                                else:
-                                                    st.error("AI grading payload returned execution parameter errors.")
-                                            except Exception as e:
-                                                st.error(f"Error during AI execution: {str(e)}")
-                            
-                            with col_b:
-                                default_marks = 0
-                                if row['marks'] and str(row['marks']).strip():
-                                    try: default_marks = int(row['marks'])
-                                    except: default_marks = 0
-                                
-                                manual_marks = st.number_input("Enter marks manually", min_value=0, max_value=10, value=default_marks, key=f"manual_{row['id']}")
-                                if st.button("Save Manual Marks", key=f"save_{row['id']}"):
-                                    manual_conn = get_db_connection()
-                                    with manual_conn.cursor() as man_cur:
-                                        man_cur.execute("UPDATE submissions SET marks = %s WHERE id = %s;", (str(manual_marks), int(row["id"])))
-                                    manual_conn.commit()
-                                    manual_conn.close()
-                                    st.success(f"Marks updated manually to {manual_marks}/10")
-                                    st.rerun()
+                if df.empty:
+                    st.info("🔍 No student assignment uploads found matching those filter selections.")
+                else:
+                    st.dataframe(
+                        df[["semester", "section", "subject", "assignment", "username", "full_name", "submission_time", "marks"]],
+                        column_config={
+                            "semester": "Semester", "section": "Sec", "subject": "Subject",
+                            "assignment": "Assignment", "username": "Roll No.", "full_name": "Student Name",
+                            "submission_time": "Submission Time", "marks": "Marks"
+                        },
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    st.divider()
+                    st.subheader("AI Grading Tool Workspace")
+
+                    for _, row in df.iterrows():
+                        expander_title = f"{row['username']} [Sec {row['section']}] - {row['assignment']} ({row['subject']})"
                         
-                        if row['ai_summary'] and str(row['ai_summary']).strip():
-                            with st.expander("Previous AI Feedback Logs"):
-                                st.write(row['ai_summary'])
+                        with st.expander(expander_title):
+                            col1, col2 = st.columns([2, 1])
+
+                            with col1:
+                                st.write(f"**Student:** {row['full_name']} ({row['username']})")
+                                st.write(f"**Class Group:** {row['semester']} | **Section:** {row['section']}")
+                                st.write(f"**Subject:** {row['subject']} | **Assignment:** {row['assignment']}")
+                                st.write(f"**Submitted:** {row['submission_time']}")
+
+                                if row['marks'] and str(row['marks']).strip():
+                                    st.metric("Current Marks", f"{row['marks']}/10")
+                                else:
+                                    st.info("Not graded yet")
+
+                            with col2:
+                                if row["submission_file"] and os.path.exists(row["submission_file"]):
+                                    with open(row["submission_file"], "rb") as f:
+                                        st.download_button(
+                                            "Download Submission PDF", f,
+                                            file_name=os.path.basename(row["submission_file"]),
+                                            key=f"dl_{row['id']}"
+                                        )
+                            st.divider()
+
+                            if row["submission_file"] and os.path.exists(row["submission_file"]):
+                                col_a, col_b = st.columns(2)
+                                    
+                                with col_a:
+                                    if st.button("AI Grade", key=f"grade_{row['id']}"):
+                                        if not row['rubric'] or not str(row['rubric']).strip():
+                                            st.warning("Please enter a rubric/model answer first inside your Assignment settings.")
+                                        else:
+                                            with st.spinner("AI processing drawing calculations..."):
+                                                try:
+                                                    result = vision_grade(row["submission_file"], row["rubric"])
+                                                    st.markdown("### **AI Analysis Response:**")
+                                                    st.write(result)
+
+                                                    if result and "Error" not in str(result):
+                                                        extracted_score = extract_marks(result)
+                                                        if extracted_score is not None:
+                                                            update_conn = get_db_connection()
+                                                            with update_conn.cursor() as up_cur:
+                                                                up_cur.execute("UPDATE submissions SET marks = %s, ai_summary = %s WHERE id = %s;", (str(extracted_score), result, int(row["id"])))
+                                                            update_conn.commit()
+                                                            update_conn.close()
+                                                            st.success(f"Updated marks automatically: {extracted_score}/10")
+                                                            st.rerun()
+                                                        else:
+                                                            st.warning("Could not extract a clean integer score automatically. Map it manually on the right panel.")
+                                                            update_conn = get_db_connection()
+                                                            with update_conn.cursor() as up_cur:
+                                                                up_cur.execute("UPDATE submissions SET ai_summary = %s WHERE id = %s;", (str(result), int(row["id"])))
+                                                            update_conn.commit()
+                                                            update_conn.close()
+                                                    else:
+                                                        st.error("AI grading payload returned execution parameter errors.")
+                                                except Exception as e:
+                                                    st.error(f"Error during AI execution: {str(e)}")
+                                
+                                with col_b:
+                                    default_marks = 0
+                                    if row['marks'] and str(row['marks']).strip():
+                                        try: default_marks = int(row['marks'])
+                                        except: default_marks = 0
+                                    
+                                    manual_marks = st.number_input("Enter marks manually", min_value=0, max_value=10, value=default_marks, key=f"manual_{row['id']}")
+                                    if st.button("Save Manual Marks", key=f"save_{row['id']}"):
+                                        manual_conn = get_db_connection()
+                                        with manual_conn.cursor() as man_cur:
+                                            man_cur.execute("UPDATE submissions SET marks = %s WHERE id = %s;", (str(manual_marks), int(row["id"])))
+                                        manual_conn.commit()
+                                        manual_conn.close()
+                                        st.success(f"Marks updated manually to {manual_marks}/10")
+                                        st.rerun()
+                            
+                            if row['ai_summary'] and str(row['ai_summary']).strip():
+                                with st.expander("Previous AI Feedback Logs"):
+                                    st.write(row['ai_summary'])
+        except Exception as e:
+            st.error(f"❌ Tab 4 Structural Execution Failure: {str(e)}")
 
     # =========================================================================
     # TAB 5: PERFORMANCE & GRADING HUB
@@ -1161,6 +1163,12 @@ def create_announcement(title, message, semester_id, priority, user_id, expires_
             key="hub_view_mode_selector"
         )
         st.divider()
+
+        # [The rest of your clean, self-defending Tab 5 code from before sits safely right below this]
+
+
+
+    
 
         # --- SUB-VIEW 1: ANALYTICS ---
         if view_mode == "📈 Analytics Dashboard":
