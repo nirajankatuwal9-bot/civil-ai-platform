@@ -1605,3 +1605,144 @@ if role == "lecturer":
                     sync_ros_conn.close()
                     st.success("✅ Roster configurations synchronized perfectly inside Neon database clusters!")
                     st.rerun()
+        # =========================================================================
+    # TAB 7: STUDY MATERIALS REPOSITORY
+    # =========================================================================
+    with tabs[7]:
+        st.title("📚 Study Materials Repository")
+        st.subheader("➕ Upload Lecture Notes & Reference Files")
+        
+        try:
+            mat_conn = get_db_connection()
+            sems_mat = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", mat_conn)
+            
+            if sems_mat.empty:
+                st.warning("Please configure your institutional semesters before uploading materials.")
+            else:
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    sel_sem_m = st.selectbox("Target Semester Group", sems_mat["name"], key="mat_sem_picker")
+                    sem_id_m = int(sems_mat[sems_mat["name"] == sel_sem_m]["id"].values[0])
+                    
+                    subjects_mat = pd.read_sql_query("SELECT * FROM subjects WHERE semester_id = %s ORDER BY name ASC;", mat_conn, params=(sem_id_m,))
+                    if subjects_mat.empty:
+                        st.error("No subjects found for this semester. Add a subject first.")
+                        sub_id_m = None
+                    else:
+                        sel_sub_m = st.selectbox("Target Subject Mapping", subjects_mat["name"], key="mat_sub_picker")
+                        sub_id_m = int(subjects_mat[subjects_mat["name"] == sel_sub_m]["id"].values[0])
+                
+                with col_m2:
+                    mat_title = st.text_input("Material Title", placeholder="e.g., Boundary Layer Theory Notes")
+                    mat_desc = st.text_area("Brief Description / Syllabus Reference")
+                    mat_file = st.file_uploader("📎 Upload Reference Document", type=ALLOWED_MATERIAL_TYPES, key="mat_file_uploader")
+
+                if st.button("🚀 Deploy Material to Repository", use_container_width=True, type="primary"):
+                    if not sub_id_m:
+                        st.error("A valid target subject mapping must be active.")
+                    elif not mat_title.strip() or not mat_file:
+                        st.error("Material Title and a valid file upload stream are mandatory fields.")
+                    else:
+                        is_valid, validation_msg = validate_file_upload(mat_file, ALLOWED_MATERIAL_TYPES, MAX_FILE_SIZE_MB)
+                        if not is_valid:
+                            st.error(f"❌ File Validation Error: {validation_msg}")
+                        else:
+                            os.makedirs("study_materials", exist_ok=True)
+                            timestamp = datetime.now(NST).strftime("%Y%m%d_%H%M%S")
+                            clean_filename = f"{timestamp}_{mat_file.name.replace(' ', '_')}"
+                            file_path = f"study_materials/{clean_filename}"
+                            
+                            with open(file_path, "wb") as f:
+                                f.write(mat_file.getbuffer())
+                                
+                            with mat_conn.cursor() as mat_cur:
+                                mat_cur.execute("""
+                                    INSERT INTO study_materials (title, subject_id, semester_id, file_path, description, upload_date, uploaded_by)
+                                    VALUES (%s, %s, %s, %s, %s, %s, %s);
+                                """, (mat_title.strip(), sub_id_m, sem_id_m, file_path, mat_desc.strip(), datetime.now(NST).strftime("%Y-%m-%d %H:%M"), int(st.session_state.user_id)))
+                            mat_conn.commit()
+                            st.success(f"✅ Material '{mat_title.strip()}' deployed securely to cloud repositories!")
+                            st.rerun()
+            mat_conn.close()
+        except Exception as e:
+            st.error(f"Material Repository Compile Failure: {str(e)}")
+
+    # =========================================================================
+    # TAB 8: CLOUD STORAGE MANAGEMENT SYSTEM
+    # =========================================================================
+    with tabs[8]:
+        st.title("💾 Cloud Enclave Storage Control")
+        st.info("Monitor physical asset allocations and trigger routine server maintenance.")
+        
+        try:
+            if st.button("🧹 Run Garbage Collection & Orphan Cleanup", type="primary", use_container_width=True):
+                with st.spinner("Scanning directory matrices against Neon database maps..."):
+                    deleted_files, space_freed = cleanup_orphaned_files()
+                st.success(f"🧼 Cleanup complete! Purged {deleted_files} unindexed files, freeing **{space_freed} MB** of server space.")
+                st.rerun()
+                
+            st.divider()
+            st.subheader("📊 Sector Space Allocation Telemetry")
+            
+            storage_stats = get_storage_stats()
+            if not storage_stats:
+                st.info("No server folders initialized yet.")
+            else:
+                for folder_label, metrics in storage_stats.items():
+                    col_st1, col_st2 = st.columns(2)
+                    with col_st1:
+                        st.metric(label=f"📁 {folder_label} Volumetric Size", value=f"{metrics['size_mb']} MB")
+                    with col_st2:
+                        st.metric(label="📄 Total File Index Count", value=f"{metrics['file_count']} items")
+                    st.divider()
+        except Exception as e:
+            st.error(f"Storage Telemetry Failure: {str(e)}")
+
+    # =========================================================================
+    # TAB 9: STUDENT INTELLIGENCE PROFILES
+    # =========================================================================
+    with tabs[9]:
+        st.title("👤 Student Intelligence Profiles")
+        
+        try:
+            search_query = st.text_input("🔍 Search Active Directory Profiles (Type Name or Roll Number)", placeholder="e.g., Roll No or Name...")
+            
+            if search_query.strip():
+                matched_students = search_students(search_query)
+                
+                if matched_students.empty:
+                    st.info("No matching student profiles found inside your institutional directory enclaves.")
+                else:
+                    for _, student in matched_students.iterrows():
+                        with st.container(border=True):
+                            st.markdown(f"### 🎓 {student['full_name']} (Roll: `{student['username']}`)")
+                            st.write(f"**Class Matrix:** {student['semester']} | **Section:** {student['section']} | **Lab Group:** {student['lab_group']}")
+                            
+                            # Fetch current academic records across all subjects mapped to this specific user
+                            perf_conn = get_db_connection()
+                            marks_df = pd.read_sql_query("""
+                                SELECT s.name as subject_name, m.*
+                                FROM student_marks m
+                                JOIN subjects s ON m.subject_id = s.id
+                                WHERE m.student_id = %s;
+                            """, perf_conn, params=(int(student['id']),))
+                            perf_conn.close()
+                            
+                            if marks_df.empty:
+                                st.info("⏳ No evaluation marks or internal logging records compiled for this student profile yet.")
+                            else:
+                                st.dataframe(
+                                    marks_df[["subject_name", "t_att_present", "t_att_total", "t_hw_raw", "t_mid_raw", "t_final_raw"]],
+                                    column_config={
+                                        "subject_name": "Subject",
+                                        "t_att_present": "Lectures Attended",
+                                        "t_att_total": "Total Lectures",
+                                        "t_hw_raw": "Assignments Score",
+                                        "t_mid_raw": "Mid-Term (%)",
+                                        "t_final_raw": "Internal Marks"
+                                    },
+                                    use_container_width=True,
+                                    hide_index=True
+                               )
+        except Exception as e:
+            st.error(f"Profile Intelligence Portal Error: {str(e)}")
