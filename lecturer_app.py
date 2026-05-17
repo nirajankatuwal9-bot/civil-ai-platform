@@ -691,4 +691,299 @@ def calculate_internal_practical(row, subject_id, db_conn):
     is_eligible = att_ratio >= 0.70
     
     return round(raw_total, 2), is_eligible
+# =========================================================================
+# ======================== MAIN ROUTING INTERFACE =========================
+# =========================================================================
+
+if role == "lecturer":
+
+    # Rebuilding your exact 10-tab architectural layout structurally
+    tabs = st.tabs([
+        "Dashboard",  
+        "Semesters",
+        "Subjects",
+        "Assignments",
+        "Submissions & AI",
+        "Analytics",
+        "Manage Students",
+        "Study Materials",
+        "Storage Management",
+        "Student Profiles"
+    ])
+    
+    # ==========================================
+    # TAB 0: DASHBOARD & BROADCAST ANNOUNCEMENTS
+    # ==========================================
+    with tabs[0]:
+        st.title("📊 Dashboard")
+            
+        with st.expander("📢 Create New Announcement"):
+            col_ann1, col_ann2 = st.columns([2, 1])
+                
+            with col_ann1:
+                ann_title = st.text_input("Announcement Title", key="ann_title")
+                ann_message = st.text_area("Message", key="ann_message", height=100)
+                
+            with col_ann2:
+                dash_conn = get_db_connection()
+                sems_ann = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", dash_conn)
+                dash_conn.close()
+                
+                ann_sem_options = ["All Semesters"] + sems_ann["name"].tolist()
+                ann_sem = st.selectbox("Target Audience", ann_sem_options, key="ann_sem")
+                ann_priority = st.selectbox("Priority", ["Normal", "Important", "Urgent"], key="ann_priority")
+                timer_option = st.selectbox("Visibility Duration", ["Permanent (No Expiry)", "24 Hours", "3 Days", "1 Week"], key="ann_timer")
+                
+            if st.button("📢 Post Announcement", type="primary"):
+                if not ann_title.strip() or not ann_message.strip():
+                    st.error("Title and message are required.")
+                else:
+                    sem_id = None
+                    if ann_sem != "All Semesters":
+                        sem_id = int(sems_ann[sems_ann["name"] == ann_sem]["id"].values[0])
+                        
+                    if timer_option == "24 Hours":
+                        calc_expiry = str(datetime.now(NST) + timedelta(days=1))
+                    elif timer_option == "3 Days":
+                        calc_expiry = str(datetime.now(NST) + timedelta(days=3))
+                    elif timer_option == "1 Week":
+                        calc_expiry = str(datetime.now(NST) + timedelta(days=7))
+                    else:
+                        calc_expiry = None
+
+                    success, msg = create_announcement(
+                        ann_title,
+                        ann_message,
+                        sem_id,
+                        ann_priority,
+                        st.session_state.user_id,
+                        calc_expiry 
+                    )
+                        
+                    if success:
+                        with st.spinner("Broadcasting emails to students..."):
+                            email_subject = f"📢 The N-Streamlines: {ann_title}"
+                            email_body = f"Hello,\n\nA new announcement has been posted by Er. Nirajan Katuwal:\n\nTitle: {ann_title}\nPriority: {ann_priority}\n\nMessage:\n{ann_message}\n\nPlease log into the platform to view the details."
+                            e_success, e_msg = send_email_notification(sem_id, email_subject, email_body)
+                                
+                        if e_success:
+                            st.success(f"✅ {msg} & {e_msg}")
+                        else:
+                            st.warning(f"✅ {msg}, but emails were skipped: {e_msg}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg}")
+            
+        st.divider()
+        
+        # Deadlines Overview Queries translated to PostgreSQL
+        dash_conn = get_db_connection()
+        all_assignments = pd.read_sql_query("""
+            SELECT a.id, a.title, a.deadline, s.name as subject, sem.name as semester
+            FROM assignments a
+            JOIN subjects s ON a.subject_id = s.id
+            JOIN semesters sem ON s.semester_id = sem.id
+            ORDER BY a.deadline ASC;
+        """, dash_conn)
+        dash_conn.close()
+        
+        if all_assignments.empty:
+            st.info("No assignments created yet.")
+        else:
+            st.subheader("⏰ Assignment Deadlines Overview")
+            overdue, due_today, due_soon, upcoming = [], [], [], []
+            
+            for _, assignment in all_assignments.iterrows():
+                days, status, color = get_deadline_status(assignment['deadline'])
+                assign_info = {
+                    'title': assignment['title'], 'subject': assignment['subject'],
+                    'semester': assignment['semester'], 'deadline': assignment['deadline'],
+                    'days': days, 'status': status, 'color': color, 'id': assignment['id']
+                }
+                if status == "Overdue": overdue.append(assign_info)
+                elif status == "Due Today": due_today.append(assign_info)
+                elif status in ["Due Soon", "This Week"]: due_soon.append(assign_info)
+                else: upcoming.append(assign_info)
+            
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("🔴 Overdue", len(overdue))
+            col2.metric("🟠 Due Today", len(due_today))
+            col3.metric("🟡 Due This Week", len(due_soon))
+            col4.metric("🔵 Upcoming", len(upcoming))
+            st.divider()
+            
+            if overdue:
+                st.error("🔴 **OVERDUE ASSIGNMENTS**")
+                dash_conn = get_db_connection()
+                for assign in overdue:
+                    with st.expander(f"{assign['semester']} - {assign['subject']} ({assign['title']})"):
+                        st.write(f"**Deadline:** {assign['deadline']}")
+                        st.write(f"**Overdue by:** {abs(assign['days'])} days")
+                        subs = pd.read_sql_query("SELECT COUNT(*) as count FROM submissions WHERE assignment_id = %s;", dash_conn, params=(assign['id'],))
+                        st.metric("Submissions Received", subs.iloc[0]['count'])
+                dash_conn.close()
+
+    # ==========================================
+    # TAB 1: SEMESTER MANAGEMENT
+    # ==========================================
+    with tabs[1]:
+        st.title("🎓 Semester Management")
+        name = st.text_input("New Semester Name")
+
+        if st.button("Add Semester"):
+            if not name.strip():
+                st.error("Semester name cannot be empty.")
+            else:
+                sem_conn = get_db_connection()
+                with sem_conn.cursor() as sem_cur:
+                    try:
+                        sem_cur.execute("INSERT INTO semesters (name) VALUES (%s);", (name.strip(),))
+                        sem_conn.commit()
+                        st.success("✅ Semester Added")
+                        st.rerun()
+                    except Exception:
+                        st.warning("⚠️ Semester already exists or encountered an allocation error.")
+                sem_conn.close()
+
+        sem_conn = get_db_connection()
+        st.dataframe(pd.read_sql_query("SELECT id, name FROM semesters ORDER BY name ASC;", sem_conn), use_container_width=True, hide_index=True)
+        st.divider()
+        
+        st.subheader("🗑️ Delete Semester")
+        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", sem_conn) 
+        sem_conn.close()
+        
+        if not sems.empty:
+            semester_options = {f"{row['name']} (ID:{row['id']})": row['id'] for _, row in sems.iterrows()}
+            selected_sem = st.selectbox("Select Semester to Delete", list(semester_options.keys()), key="delete_semester")
+            
+            if st.button("Delete Selected Semester"):
+                sem_id = semester_options[selected_sem]
+                del_conn = get_db_connection()
+                with del_conn.cursor() as del_cur:
+                    try:
+                        # Clear cascade mappings inside cloud file enclaves
+                        del_cur.execute("DELETE FROM semesters WHERE id = %s;", (int(sem_id),))
+                        del_conn.commit()
+                        st.success("✅ Semester and all related records dropped completely from cloud enclaves!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error dropping semester: {str(e)}")
+                del_conn.close()
+
+    # ==========================================
+    # TAB 2: SUBJECT MANAGEMENT & MARKING SCHEMES
+    # ==========================================
+    with tabs[2]:
+        st.title("📚 Subject Management")
+        sub_conn = get_db_connection()
+        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", sub_conn)
+
+        if sems.empty:
+            st.warning("Please create a semester first.")
+            sub_conn.close()
+        else:
+            st.subheader("➕ Add New Subject")
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                sem = st.selectbox("Select Semester", sems["name"], key="subject_semester")
+                sem_id = int(sems[sems["name"] == sem]["id"].values[0])
+            with col2:
+                sub = st.text_input("Subject Name", key="subject_name", placeholder="e.g., Hydraulics")
+            
+            if st.button("➕ Add Subject", use_container_width=True):
+                if not sub.strip():
+                    st.error("Subject name cannot be empty.")
+                else:
+                    with sub_conn.cursor() as sub_cur:
+                        sub_cur.execute("INSERT INTO subjects (name, semester_id) VALUES (%s, %s);", (sub.strip(), int(sem_id)))
+                    sub_conn.commit()
+                    st.success(f"✅ Subject '{sub.strip()}' added to {sem}")
+                    st.rerun()
+            
+            st.divider()
+            st.subheader(f"📋 Subjects for: {sem}")
+            subjects_for_sem = pd.read_sql_query("SELECT id, name FROM subjects WHERE semester_id = %s ORDER BY name ASC;", sub_conn, params=(int(sem_id),))
+            st.dataframe(subjects_for_sem, use_container_width=True, hide_index=True)
+            sub_conn.close()
+
+    # ==========================================
+    # TAB 3: ASSIGNMENT CREATION BOXES
+    # ==========================================
+    with tabs[3]:
+        st.title("📝 Assignment Management")
+        st.subheader("➕ Create New Assignment")
+        
+        ass_conn = get_db_connection()
+        sems = pd.read_sql_query("SELECT * FROM semesters ORDER BY name ASC;", ass_conn)
+
+        if sems.empty:
+            st.warning("Please create a semester first.")
+            ass_conn.close()
+        else:
+            col1, col2 = st.columns(2)
+            with col1:
+                sem_name = st.selectbox("Select Semester Target", sems["name"], key="assign_sem")
+                sem_id = int(sems[sems["name"] == sem_name]["id"].values[0])
+                subjects = pd.read_sql_query("SELECT * FROM subjects WHERE semester_id = %s ORDER BY name ASC;", ass_conn, params=(sem_id,))
+
+                if subjects.empty:
+                    st.warning("Please create a subject for this semester first.")
+                    subject_selected = False
+                else:
+                    subject_options = {row['name']: row['id'] for _, row in subjects.iterrows()}
+                    selected_subject = st.selectbox("Select Subject Mapping", list(subject_options.keys()))
+                    sub_id = int(subject_options[selected_subject])
+                    subject_selected = True
+            
+            with col2:
+                title = st.text_input("Assignment Title", placeholder="e.g., Ogee Weir Discharge Analysis")
+                deadline = st.date_input("Deadline Trajectory")
+                rubric_text = st.text_area("🎯 Marking Rubric / AI Evaluation Template", placeholder="Key verification benchmarks...")
+                file = st.file_uploader("📎 Upload Question PDF Document (Optional)", type=["pdf"])
+
+            if st.button("➕ Create Assignment Entry", use_container_width=True, type="primary"):
+                if not subject_selected:
+                    st.error("Please select a target subject model matrix.")
+                elif not title.strip():
+                    st.error("Assignment title fields are mandatory.")
+                else:
+                    file_path = ""
+                    if file:
+                        is_valid, validation_msg = validate_file_upload(file, ALLOWED_ASSIGNMENT_TYPES, MAX_FILE_SIZE_MB)
+                        if not is_valid:
+                            st.error(f"❌ File Validation Error: {validation_msg}")
+                        else:
+                            os.makedirs("assignment_files", exist_ok=True)
+                            timestamp = datetime.now(NST).strftime("%Y%m%d_%H%M%S")
+                            file_path = f"assignment_files/{timestamp}_{file.name.replace(' ', '_')}"
+                            with open(file_path, "wb") as f:
+                                f.write(file.getbuffer())
+                            apply_watermark(file_path)
+
+                    with ass_conn.cursor() as ass_cur:
+                        ass_cur.execute("""
+                            INSERT INTO assignments (title, subject_id, deadline, question_file, rubric)
+                            VALUES (%s, %s, %s, %s, %s);
+                        """, (title.strip(), int(sub_id), str(deadline), file_path, rubric_text.strip()))
+                    ass_conn.commit()
+                    st.success(f"✅ Assignment '{title.strip()}' deployed to cloud matrices successfully!")
+                    st.balloons()
+                    st.rerun()
+            ass_conn.close()
+
+# Helper baseline announcement initialization utility mapping out positional parameters
+def create_announcement(title, message, semester_id, priority, user_id, expires_at=None):
+    try:
+        ann_conn = get_db_connection()
+        with ann_conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO announcements (title, message, semester_id, created_by, created_at, priority, expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s);
+            """, (title.strip(), message.strip(), semester_id, int(user_id), str(datetime.now(NST)), priority, expires_at))
+        ann_conn.commit()
+        ann_conn.close()
+        return True, "Announcement saved to Neon core register."
+    except Exception as e:
+        return False, f"Cloud database query rejection link: {str(e)}"
     
